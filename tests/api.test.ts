@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { Repository } from '../src/server/repository';
 import { createApp } from '../src/server/app';
+import { buildScenarioAState } from './fixtures/demo-scenarios';
 process.env.DEMO_MODE = 'true';
 
 describe('authenticated incident and recovery API', () => {
@@ -14,7 +15,9 @@ describe('authenticated incident and recovery API', () => {
     return app.request(path,{method:'POST',headers:{'content-type':'application/json',cookie},body:JSON.stringify(body)});
   }
   beforeAll(async () => {
-    await repo.init(); analyst=await login('analyst@disruptioniq.demo'); manager=await login('manager@disruptioniq.demo');
+    await repo.init();
+    await repo.mutate(s => Object.assign(s, buildScenarioAState()));
+    analyst=await login('analyst@disruptioniq.demo'); manager=await login('manager@disruptioniq.demo');
     partner=await login('partner@disruptioniq.demo'); admin=await login('admin@disruptioniq.demo');
     procurement=await login('procurement@disruptioniq.demo');
   },30000);
@@ -28,7 +31,6 @@ describe('authenticated incident and recovery API', () => {
     expect((await post('/api/webhooks/carrier',{})).status).toBe(401);
   });
   test('scenario impact, confirmed recovery and audit are linked', async () => {
-    expect((await post('/api/scenarios',{scenario:'A'})).status).toBe(200);
     const state=await repo.read();
     const incident=state.incidents[0]!;
     expect((await post('/api/plans/generate',{incidentId:incident.id})).status).toBe(200);
@@ -37,6 +39,8 @@ describe('authenticated incident and recovery API', () => {
     expect((await post(`/api/plans/${p!.id}`,{action:'approve',confirmed:true})).status).toBe(403);
     expect((await post(`/api/plans/${p!.id}`,{action:'approve'},manager)).status).toBe(400);
     expect((await post(`/api/plans/${p!.id}`,{action:'approve',confirmed:true},manager)).status).toBe(200);
+    const mid=await repo.read(); expect(mid.plans.find(x=>x.id===p!.id)?.status).toBe('awaiting_second_approval');
+    expect((await post(`/api/plans/${p!.id}`,{action:'approve',confirmed:true},admin)).status).toBe(200);
     const after=await repo.read(); expect(after.plans.find(x=>x.id===p!.id)?.status).toBe('executed');
     expect(after.decisions.some(d=>d.entityId===p!.id && d.before && d.after)).toBe(true);
   });
@@ -46,7 +50,7 @@ describe('authenticated incident and recovery API', () => {
     expect(data.state.orders).toHaveLength(0); expect(data.state.lots).toHaveLength(0);
     expect(data.state.decisions).toHaveLength(0); expect(data.state.plans).toHaveLength(0);
     expect(data.state.incidents.every((i:any)=>i.memberOrgIds.includes('partner'))).toBe(true);
-    expect((await post('/api/scenarios',{scenario:'A'},partner)).status).toBe(403);
+    expect((await post('/api/import',{},partner)).status).toBe(403);
   });
   test('imports return row errors instead of replacing good data', async () => {
     const before=await repo.read();
@@ -61,7 +65,7 @@ describe('authenticated incident and recovery API', () => {
   test('procurement can submit documents and shipment imports validate lot references', async () => {
     // Test procurement submitting document
     const docRes = await post('/api/documents', { filename: 'po.txt', text: 'Shipment: shipment-1\nQuantity: 50\nDate: 2026-10-30' }, procurement);
-    expect(docRes.status).toBe(200);
+    expect(docRes.status).toBe(202);
 
     // Test shipment imports validation of lotId: unknown lot
     const importUnknown = await post('/api/import', {
@@ -85,8 +89,7 @@ describe('authenticated incident and recovery API', () => {
     expect(dataMismatch.errors.some((e: any) => e.message.includes('item or warehouse does not match shipment'))).toBe(true);
   });
   test('demo reset preserves audit history and records reset decision with prior details', async () => {
-    // Perform an action creating a decision
-    await post('/api/scenarios', { scenario: 'A' }, admin);
+    // Ensure there is at least one decision
     const beforeReset = await repo.read();
     expect(beforeReset.decisions.length).toBeGreaterThan(0);
     const priorCount = beforeReset.decisions.length;
@@ -101,5 +104,9 @@ describe('authenticated incident and recovery API', () => {
     const resetDecision = afterReset.decisions[afterReset.decisions.length - 1]!;
     expect(resetDecision.action).toBe('demo_reset');
     expect(resetDecision.detail).toContain('Prior version');
+    // Operational collections are cleared to empty
+    expect(afterReset.orders).toHaveLength(0);
+    expect(afterReset.shipments).toHaveLength(0);
+    expect(afterReset.lots).toHaveLength(0);
   });
 });

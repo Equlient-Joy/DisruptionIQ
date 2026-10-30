@@ -1,4 +1,30 @@
 import type { State } from '../shared/types';
+import { defaultIntegrations } from './normalize';
+
+/** Operationally empty workspace for judges; initial setup has no baked records. */
+export function createEmptyState(now = new Date()): State {
+  const clock = Number.isFinite(now.getTime()) ? now.toISOString() : new Date().toISOString();
+  return {
+    version: 1,
+    clock,
+    suppliers: [],
+    dependencies: [],
+    warehouses: [],
+    lots: [],
+    shipments: [],
+    orders: [],
+    incidents: [],
+    tasks: [],
+    events: [],
+    plans: [],
+    decisions: [],
+    documents: [],
+    notifications: [],
+    integrations: defaultIntegrations(clock),
+    aiReports: [],
+    queue: [],
+  };
+}
 
 /** Reproducible fictional electronics distribution workspace; all times use the displayed simulation clock. */
 export function createSeedState(now = new Date()): State {
@@ -24,7 +50,7 @@ export function createSeedState(now = new Date()): State {
     lots: [
       { id: 'lot-east', itemId: 'controller', name: 'East controller batch', warehouseId: 'warehouse-east', quantity: 40, reserved: 10, status: 'available', version: 1 },
       { id: 'lot-west', itemId: 'controller', name: 'West controller batch', warehouseId: 'warehouse-west', quantity: 100, reserved: 30, status: 'available', version: 1 },
-      { id: 'lot-hold', itemId: 'controller', name: 'Inspection batch — existing quality hold', warehouseId: 'warehouse-west', quantity: 25, reserved: 0, status: 'quarantined', version: 1 },
+      { id: 'lot-hold', itemId: 'controller', name: 'Inspection batch — existing quality hold', warehouseId: 'warehouse-west', quantity: 25, reserved: 0, status: 'held', version: 1 },
     ],
     shipments: [
       { id: 'shipment-atlas', supplierId: 'supplier-atlas', warehouseId: 'warehouse-east', itemId: 'controller', quantity: 120, status: 'in_transit', eta: time(12), baselineEta: time(12), etaHistory: [
@@ -38,6 +64,7 @@ export function createSeedState(now = new Date()): State {
       { id: 'order-hospital', customer: 'Fictional Meridian Medical', itemId: 'controller', warehouseId: 'warehouse-east', quantity: 100, fulfilled: 0, deadline: time(24), priority: 'critical', penaltyCents: 750000, status: 'open' },
       { id: 'order-transit', customer: 'Fictional Civic Transit', itemId: 'controller', warehouseId: 'warehouse-west', quantity: 90, fulfilled: 0, deadline: time(30), priority: 'high', penaltyCents: 420000, status: 'open' },
     ],
-    events: [], incidents: [], plans: [], decisions: [], tasks: [], documents: [], readings: [], notifications: [], queue: [], aiReports: [],
+    events: [], incidents: [], plans: [], decisions: [], tasks: [], documents: [], notifications: [], queue: [], aiReports: [],
+    integrations: defaultIntegrations(time(0)),
   };
 }

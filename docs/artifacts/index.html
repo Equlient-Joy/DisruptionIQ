@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DisruptionIQ Technical Documentation & Artifacts</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card-bg: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-bright: #f0f6fc;
+      --accent: #58a6ff;
+      --accent-green: #3fb950;
+      --accent-orange: #d29922;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f6f8fa;
+        --card-bg: #ffffff;
+        --border: #d0d7de;
+        --text: #24292f;
+        --text-bright: #0969da;
+        --accent: #0969da;
+        --accent-green: #1a7f37;
+        --accent-orange: #9a6700;
+      }
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      margin: 0;
+      padding: 0;
+    }
+    .hero {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 60px 24px;
+      text-align: center;
+    }
+    .hero h1 {
+      font-size: 2.5rem;
+      margin: 0 0 12px 0;
+      color: var(--text-bright);
+    }
+    .hero p {
+      font-size: 1.2rem;
+      max-width: 700px;
+      margin: 0 auto;
+      color: var(--text);
+    }
+    .container {
+      max-width: 1100px;
+      margin: 40px auto;
+      padding: 0 24px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+      margin-bottom: 40px;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .card:hover {
+      transform: translateY(-3px);
+      border-color: var(--accent);
+    }
+    .card h2 {
+      margin-top: 0;
+      color: var(--text-bright);
+      font-size: 1.4rem;
+    }
+    .card p {
+      font-size: 0.95rem;
+      color: var(--text);
+      flex-grow: 1;
+    }
+    .links {
+      display: flex;
+      gap: 12px;
+      margin-top: 20px;
+      flex-wrap: wrap;
+    }
+    .btn {
+      display: inline-block;
+      padding: 8px 14px;
+      background: var(--accent);
+      color: #ffffff;
+      text-decoration: none;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+    .btn.secondary {
+      background: var(--border);
+      color: var(--text-bright);
+    }
+    .btn:hover { opacity: 0.9; }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      background: rgba(88, 166, 255, 0.15);
+      color: var(--accent);
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+    }
+    .diagram-strip {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 24px;
+    }
+    .diagram-strip h3 { margin-top: 0; color: var(--text-bright); }
+    .diag-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .diag-pill {
+      background: var(--border);
+      color: var(--text-bright);
+      padding: 6px 12px;
+      border-radius: 6px;
+      text-decoration: none;
+      font-size: 0.85rem;
+      transition: background 0.2s;
+    }
+    .diag-pill:hover { background: var(--accent); color: #fff; }
+  </style>
+</head>
+<body>
+  <div class="hero">
+    <span class="badge">Operational Control Room Specs</span>
+    <h1>DisruptionIQ Technical Documentation</h1>
+    <p>Comprehensive system implementation reports, operations technical reference, data flow pipelines, and accessible vector flowcharts.</p>
+  </div>
+
+  <div class="container">
+    <div class="grid">
+      <!-- Card 1 -->
+      <div class="card">
+        <div>
+          <span class="badge">Architecture & Verification</span>
+          <h2>Implementation Report</h2>
+          <p>Exhaustive inspection of implemented features, multi-tier dependency networks, RBAC security, carrier webhook, ground AI support, and 36 automated verification test suites.</p>
+        </div>
+        <div class="links">
+          <a href="disruptioniq_implementation_report.html" class="btn">View Interactive HTML</a>
+          <a href="disruptioniq_implementation_report.md" class="btn secondary">Raw Markdown (.md)</a>
+        </div>
+      </div>
+
+      <!-- Card 2 -->
+      <div class="card">
+        <div>
+          <span class="badge">Technical Reference</span>
+          <h2>Operations Reference</h2>
+          <p>Complete field-by-field and algorithm-by-algorithm reference of all operations: security primitives, concurrency mutexes, idempotency, constraints, and audit logging.</p>
+        </div>
+        <div class="links">
+          <a href="disruptioniq_operations_reference.html" class="btn">View Interactive HTML</a>
+          <a href="disruptioniq_operations_reference.md" class="btn secondary">Raw Markdown (.md)</a>
+        </div>
+      </div>
+
+      <!-- Card 3 -->
+      <div class="card">
+        <div>
+          <span class="badge">Flowcharts & Lifecycle</span>
+          <h2>Data Flows & Architecture</h2>
+          <p>Source-to-sink data pipeline models, state machine transitions, shortage scoring math, two-person authorization pipeline, and mathematical evaluation criteria.</p>
+        </div>
+        <div class="links">
+          <a href="disruptioniq_data_flows_and_architectures.html" class="btn">View Interactive HTML</a>
+          <a href="disruptioniq_data_flows_and_architectures.md" class="btn secondary">Raw Markdown (.md)</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Diagram Index -->
+    <div class="diagram-strip">
+      <h3>Accessible Vector Flowcharts (Scalable SVG & PNG)</h3>
+      <p>Click any diagram to open the standalone scalable vector graphic in your browser:</p>
+      <div class="diag-links">
+        <a href="./diagrams/data_flow_end_to_end.svg" target="_blank" class="diag-pill">End-to-End System Data Flow Architecture (SVG)</a>
+        <a href="./diagrams/inbound_signal_ingestion_pipeline.svg" target="_blank" class="diag-pill">Inbound Signal Reconciliation & Ingestion Pipeline (SVG)</a>
+        <a href="./diagrams/impact_assessment_scoring_flow.svg" target="_blank" class="diag-pill">Impact Assessment & Risk Scoring Logic Flow (SVG)</a>
+        <a href="./diagrams/recovery_strategy_authorization_pipeline.svg" target="_blank" class="diag-pill">Recovery Strategy Feasibility & Two-Person Authorization Pipeline (SVG)</a>
+        <a href="./diagrams/state_lifecycle_event_intake.svg" target="_blank" class="diag-pill">Event Intake Status Lifecycle (SVG)</a>
+        <a href="./diagrams/state_lifecycle_inventory_lot.svg" target="_blank" class="diag-pill">Inventory Lot Status Lifecycle (SVG)</a>
+        <a href="./diagrams/state_lifecycle_recovery_plan.svg" target="_blank" class="diag-pill">Recovery Plan Status Lifecycle (SVG)</a>
+        <a href="./diagrams/state_lifecycle_document_claim.svg" target="_blank" class="diag-pill">Freight Document Claim Status Lifecycle (SVG)</a>
+        <a href="./diagrams/seq_event_intake_disruption_detection.svg" target="_blank" class="diag-pill">Sequence: Event Intake & Disruption Detection (SVG)</a>
+        <a href="./diagrams/seq_recovery_plan_authorization.svg" target="_blank" class="diag-pill">Sequence: Recovery Plan Generation & Authorization (SVG)</a>
+        <a href="./diagrams/seq_document_extraction_review.svg" target="_blank" class="diag-pill">Sequence: Document Extraction & Review (SVG)</a>
+      </div>
+      <p style="margin-top: 18px;"><a href="DIAGRAMS.md" class="btn secondary">Browse Full Diagrams Gallery & Previews &rarr;</a></p>
+    </div>
+  </div>
+</body>
+</html>

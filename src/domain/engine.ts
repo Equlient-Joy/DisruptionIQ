@@ -5,7 +5,7 @@ import { ingestEvent } from './events';
 export { DomainError } from './common';
 export { getImpact } from './impact';
 export { generatePlans, decidePlan } from './plans';
-export { ingestEvent, replayQueue } from './events';
+export { ingestEvent, replayQueue, integrationForEvent } from './events';
 
 export function inspectDocument(state: State, filename: string, text: string, actor: Actor): DocumentClaim {
   requireFocal(actor, ['analyst', 'manager', 'warehouse', 'procurement', 'admin']);
@@ -39,19 +39,21 @@ export function resolveDocument(state: State, id: string, actor: Actor): Documen
   audit(state, actor, 'document_confirmed', id, 'Reviewer acknowledged extracted claim and retained discrepancy evidence; operational quantities require their own reconciled events', [id, claim.fields.shipmentId], before, claim);
   return claim;
 }
-export function setLotDisposition(state: State, id: string, status: 'available' | 'quarantined', actor: Actor): void {
-  requireFocal(actor, ['warehouse', 'admin']); if (status !== 'available' && status !== 'quarantined') throw new DomainError('Disposition must be available or quarantined');
+export function setLotDisposition(state: State, id: string, status: 'available' | 'held' | 'quarantined', actor: Actor): void {
+  const targetStatus = status === 'quarantined' ? 'held' : status;
+  requireFocal(actor, ['warehouse', 'admin']); if (targetStatus !== 'available' && targetStatus !== 'held') throw new DomainError('Disposition must be available or held');
   const lot = find(state.lots, id, 'Lot');
-  if (status === 'available' && lot.status === 'disputed') {
+  if (targetStatus === 'available' && lot.status === 'disputed') {
     const conflictTime = Math.max(-Infinity, ...state.events.filter(e => e.entityId === id && e.type === 'stock_count' && e.status === 'conflict').map(e => Date.parse(e.time)));
     const reconciled = state.events.some(e => e.entityId === id && e.type === 'stock_count' && e.status === 'accepted' && (e.payload.meaning ?? 'on_hand') === 'on_hand' && Date.parse(e.time) > conflictTime);
     if (actor.role !== 'admin' || !reconciled) throw new DomainError('Disputed stock requires a newer reconciled physical count and administrator disposition', 409);
   }
-  const before = structuredClone(lot); lot.status = status; lot.version += 1;
-  audit(state, actor, 'lot_disposition', id, `${status}: authorized human review under fictional demonstration quality policy`, sourceEvidence(state, [id]), before, lot);
-  if (status === 'available') state.incidents.filter(i => i.entityId === id && ['condition_excursion', 'stock_conflict'].includes(i.type)).forEach(i => { i.status = 'resolved'; });
+  const before = structuredClone(lot); lot.status = targetStatus; lot.version += 1;
+  audit(state, actor, 'lot_disposition', id, `${targetStatus}: authorized human review under quality policy`, sourceEvidence(state, [id]), before, lot);
+  if (targetStatus === 'available') state.incidents.filter(i => i.entityId === id && i.type === 'stock_conflict').forEach(i => { i.status = 'resolved'; });
 }
 export function setTaskStatus(state: State, id: string, status: 'open' | 'done', actor: Actor): void {
+  if (actor.role === 'viewer') throw new DomainError('Partner viewers have read-only visibility.', 403);
   const task = find(state.tasks, id, 'Task'); const incident = find(state.incidents, task.incidentId, 'Incident');
   if (status !== 'open' && status !== 'done') throw new DomainError('Task status must be open or done');
   if (task.orgId !== actor.orgId || !incident.memberOrgIds.includes(actor.orgId) || (task.ownerId !== actor.id && !(actor.orgId === 'focal' && ['manager', 'admin'].includes(actor.role)))) throw new DomainError('You may update only your own scoped tasks or manage focal organization tasks', 403);
@@ -71,10 +73,15 @@ export function runScenario(state: State, scenario: 'A' | 'B', actor: Actor): vo
     ingestEvent(state, { id: `${prefix}-count-1`, source: 'Synthetic WMS count', type: 'stock_count', entityId: 'lot-west', time, payload: { quantity: 100, meaning: 'on_hand' } }, actor);
     ingestEvent(state, { id: `${prefix}-count-2`, source: 'Synthetic cycle count', type: 'stock_count', entityId: 'lot-west', time, payload: { quantity: 95, meaning: 'on_hand' } }, actor);
   } else {
-    ingestEvent(state, { id: `${prefix}-condition`, source: 'Synthetic temperature sensor', type: 'condition_reading', entityId: 'lot-east', time, payload: { temperature: 37, durationMinutes: 25 } }, actor);
+    const lotEast = state.lots.find(l => l.id === 'lot-east');
+    if (lotEast) {
+      const before = structuredClone(lotEast);
+      lotEast.status = 'held';
+      lotEast.version += 1;
+      audit(state, actor, 'lot_disposition', lotEast.id, 'Scenario B synthetic quality hold placed on lot', sourceEvidence(state, [lotEast.id]), before, lotEast);
+    }
     inspectDocument(state, 'synthetic-atlas-manifest.txt', 'Shipment: shipment-atlas\nQuantity: 127\nDate: 2026-10-30', actor);
     ingestEvent(state, { id: `${prefix}-invalid-count`, source: 'Synthetic malformed input', type: 'stock_count', entityId: 'lot-east', time, payload: { quantity: -3 } }, actor);
-    ingestEvent(state, { id: `${prefix}-broken-reference`, source: 'Synthetic unmapped sensor', type: 'condition_reading', entityId: 'unknown-lot', time, payload: { temperature: 40, durationMinutes: 25 } }, actor);
     const current = { id: `${prefix}-eta-current`, source: 'Synthetic carrier', type: 'shipment_eta' as const, entityId: 'shipment-atlas', time: atHours(state, 2), payload: { eta: atHours(state, 40) } };
     ingestEvent(state, current, actor);
     state.integrationOutage = true; audit(state, actor, 'integration_outage', 'integration', 'Limited capture remains available; source processing paused and queued durably');

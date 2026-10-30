@@ -2,7 +2,7 @@ import type { Actor, EventInput, Lot, RawEvent, State } from '../shared/types';
 import { audit, incident, integer, nextId, requireFocal, sourceEvidence, upstreamPaths, validTime } from './common';
 import { receivedQuantity, shipmentAccounting } from './impact';
 
-const types = new Set(['supplier_delay', 'shipment_eta', 'stock_count', 'warehouse_outage', 'condition_reading', 'shipment_status']);
+const types = new Set(['supplier_delay', 'shipment_eta', 'stock_count', 'warehouse_outage', 'shipment_status']);
 const statuses = new Set(['scheduled', 'in_transit', 'delayed', 'delivered']);
 const meanings = new Set(['on_hand', 'dispatched', 'collected', 'received']);
 function canonical(value: unknown): string {
@@ -17,6 +17,13 @@ const ordersForLot = (state: State, entityId: string) => {
 function sameScope(a: EventInput, b: EventInput): boolean {
   return a.type === b.type && a.entityId === b.entityId && (a.type !== 'stock_count' || physicalMeaning(a) === physicalMeaning(b));
 }
+export function integrationForEvent(eventType: string): 'carrier' | 'warehouse' | 'supplier' | 'document' | 'ai' {
+  if (eventType === 'shipment_eta' || eventType === 'shipment_status') return 'carrier';
+  if (eventType === 'stock_count' || eventType === 'warehouse_outage') return 'warehouse';
+  if (eventType === 'supplier_delay') return 'supplier';
+  return 'carrier';
+}
+
 function validation(state: State, input: EventInput): string | undefined {
   if (!input || typeof input.id !== 'string' || !input.id.trim() || input.id.length > 200 || typeof input.source !== 'string' || !input.source.trim() || input.source.length > 200) return 'Event ID and source are required';
   if (!types.has(input.type) || !validTime(input.time) || typeof input.entityId !== 'string' || !input.payload || typeof input.payload !== 'object' || Array.isArray(input.payload)) return 'Invalid event type, timestamp, entity or payload';
@@ -49,19 +56,14 @@ function validation(state: State, input: EventInput): string | undefined {
       }
     }
   }
-  if (input.type === 'stock_count' || input.type === 'condition_reading') {
+  if (input.type === 'stock_count') {
     const lot = state.lots.find(l => l.id === input.entityId); if (!lot) return 'Broken sensor/lot reference; precise affected stock unknown';
     if (payload.warehouseId !== undefined && payload.warehouseId !== lot.warehouseId) return 'Quantity location conflicts with linked lot warehouse';
     if (payload.itemId !== undefined && payload.itemId !== lot.itemId) return 'Quantity item conflicts with linked lot item';
     if (payload.unit !== undefined && payload.unit !== 'units') return 'Only integer unit quantities are supported; conversion evidence required';
-    if (input.type === 'stock_count') {
-      if (!integer(payload.quantity)) return 'Stock quantity must be a nonnegative safe integer';
-      if (!meanings.has(String(physicalMeaning(input)))) return 'Quantity meaning must be on_hand, dispatched, collected or received';
-      if (physicalMeaning(input) === 'on_hand' && payload.quantity < lot.reserved) return 'Count below hard reservations; manual reconciliation required';
-    } else {
-      if (lot.itemId !== 'controller') return `Condition policy missing for item ${lot.itemId}; acceptable condition and quality exposure cannot be established`;
-      if (typeof payload.temperature !== 'number' || !Number.isFinite(payload.temperature) || typeof payload.durationMinutes !== 'number' || !Number.isFinite(payload.durationMinutes) || payload.durationMinutes < 0) return 'Condition reading requires finite temperature and nonnegative duration';
-    }
+    if (!integer(payload.quantity)) return 'Stock quantity must be a nonnegative safe integer';
+    if (!meanings.has(String(physicalMeaning(input)))) return 'Quantity meaning must be on_hand, dispatched, collected or received';
+    if (physicalMeaning(input) === 'on_hand' && payload.quantity < lot.reserved) return 'Count below hard reservations; manual reconciliation required';
   }
   return undefined;
 }
@@ -75,9 +77,18 @@ export function ingestEvent(state: State, input: EventInput, actor: Actor): RawE
     if (priorId) {
       if (canonical({ type: priorId.type, entityId: priorId.entityId, time: priorId.time, payload: priorId.payload }) === canonical({ type: input.type, entityId: input.entityId, time: input.time, payload: input.payload })) { raw.status = 'duplicate'; raw.message = 'Idempotency key already processed; no operational effect'; }
       else { raw.status = 'conflict'; raw.message = 'Idempotency key reused with different evidence; no operational effect'; }
-    } else if (state.integrationOutage) { raw.status = 'queued'; raw.message = 'Durably queued during simulated integration outage'; state.queue.push(structuredClone(input)); }
-    else {
-      const accepted = state.events.filter(e => e.status === 'accepted' && sameScope(e, input));
+    } else {
+      const integrationKind = integrationForEvent(input.type);
+      const conn = (state.integrations || []).find(c => c.kind === integrationKind);
+      const isOutage = conn ? conn.status === 'offline' : (state.integrationOutage ?? false);
+
+      if (isOutage) {
+        raw.status = 'queued';
+        raw.message = `Durably queued during simulated ${conn?.name || integrationKind} outage`;
+        state.queue.push(structuredClone(input));
+        if (conn) conn.failureCount = (conn.failureCount || 0) + 1;
+      } else {
+        const accepted = state.events.filter(e => e.status === 'accepted' && sameScope(e, input));
       const seedTime = input.type === 'shipment_eta' ? Math.max(-Infinity, ...state.shipments.find(s => s.id === input.entityId)!.etaHistory.map(r => Date.parse(r.at))) : -Infinity;
       let latestTime = Math.max(seedTime, -Infinity, ...accepted.map(e => Date.parse(e.time)));
       if (input.type === 'stock_count') {
@@ -95,6 +106,7 @@ export function ingestEvent(state: State, input: EventInput, actor: Actor): RawE
       }
     }
   }
+}
   state.events.push(raw);
   if (raw.status === 'accepted') {
     if (Date.parse(input.time) > Date.parse(state.clock)) state.clock = new Date(input.time).toISOString();
@@ -130,14 +142,6 @@ function applyAccepted(state: State, input: EventInput, actor: Actor): void {
     const lot = state.lots.find(l => l.id === input.entityId)!;
     if (physicalMeaning(input) === 'on_hand') { const before = structuredClone(lot); lot.quantity = payload.quantity as number; lot.version += 1; audit(state, actor, 'stock_reconciled', lot.id, 'Physical on-hand count accepted; disposition is preserved', [input.id], before, lot); incident(state, actor, 'stock_shortage', lot.id, 'Stock count changed order coverage', 'Physical count requires downstream coverage reassessment', ordersForLot(state, lot.id), input.id); }
     else audit(state, actor, 'lifecycle_claim_recorded', lot.id, `${physicalMeaning(input)} quantity is a lifecycle claim, not physical on-hand stock`, [input.id]);
-  } else if (input.type === 'condition_reading') {
-    const lot = state.lots.find(l => l.id === input.entityId)!;
-    state.readings.push({ id: nextId(state, 'reading'), lotId: lot.id, at: input.time, temperature: payload.temperature as number, threshold: 30, durationMinutes: payload.durationMinutes as number });
-    if ((payload.temperature as number) > 30 && (payload.durationMinutes as number) >= 15) {
-      const before = structuredClone(lot); lot.status = lot.status === 'disputed' ? 'disputed' : 'quarantined'; lot.version += 1;
-      audit(state, actor, 'quality_quarantine', lot.id, 'Fictional controller policy: temperature >30°C for at least 15 minutes blocks usable stock', [input.id], before, lot);
-      incident(state, actor, 'condition_excursion', lot.id, 'Condition excursion blocks controller stock', 'Quality hold requires authorized warehouse disposition; synthetic thresholds are demonstration policy', ordersForLot(state, lot.id), input.id);
-    }
   } else if (input.type === 'shipment_status') {
     const shipment = state.shipments.find(s => s.id === input.entityId)!;
     if (payload.status === 'delivered') {
@@ -161,8 +165,62 @@ function applyAccepted(state: State, input: EventInput, actor: Actor): void {
     } else shipment.status = payload.status as typeof shipment.status;
   }
 }
-export function replayQueue(state: State, actor: Actor): void {
-  requireFocal(actor, ['analyst', 'manager', 'admin']); const queue = [...state.queue]; state.integrationOutage = false; state.queue = [];
-  audit(state, actor, 'integration_restored', 'integration', `Replaying ${queue.length} durable events with original effective times`, queue.map(e => e.id));
-  for (const input of queue) ingestEvent(state, input, actor);
+export interface ReplayOptions {
+  integrationId?: string;
+  preview?: boolean;
+}
+
+export function replayQueue(state: State, actor: Actor, options: ReplayOptions = {}): { ok: boolean; replayed: number; preview?: boolean; events: RawEvent[] } {
+  requireFocal(actor, ['analyst', 'manager', 'admin']);
+
+  let targetKind: string | undefined;
+  if (options.integrationId) {
+    const conn = (state.integrations || []).find(c => c.id === options.integrationId || c.kind === options.integrationId);
+    if (conn) targetKind = conn.kind;
+  }
+
+  const toReplay = targetKind
+    ? state.queue.filter(e => integrationForEvent(e.type) === targetKind)
+    : [...state.queue];
+
+  if (options.preview) {
+    const simState = structuredClone(state);
+    simState.integrationOutage = false;
+    for (const c of simState.integrations || []) {
+      if (!targetKind || c.kind === targetKind) c.status = 'online';
+    }
+    const previewEvents: RawEvent[] = [];
+    for (const input of toReplay) {
+      previewEvents.push(ingestEvent(simState, input, actor));
+    }
+    return { ok: true, replayed: toReplay.length, preview: true, events: previewEvents };
+  }
+
+  if (targetKind) {
+    state.queue = state.queue.filter(e => integrationForEvent(e.type) !== targetKind);
+    const conn = (state.integrations || []).find(c => c.kind === targetKind);
+    if (conn) conn.status = 'online';
+    if ((state.integrations || []).every(c => c.status !== 'offline')) state.integrationOutage = false;
+  } else {
+    state.queue = [];
+    state.integrationOutage = false;
+    for (const c of state.integrations || []) {
+      if (c.status === 'offline') c.status = 'online';
+    }
+  }
+
+  audit(
+    state,
+    actor,
+    'integration_restored',
+    options.integrationId || 'integration',
+    `Replaying ${toReplay.length} durable events with original effective times`,
+    toReplay.map(e => e.id),
+  );
+
+  const applied: RawEvent[] = [];
+  for (const input of toReplay) {
+    applied.push(ingestEvent(state, input, actor));
+  }
+  return { ok: true, replayed: applied.length, events: applied };
 }

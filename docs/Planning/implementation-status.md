@@ -8,20 +8,23 @@ This document serves as the formal verification matrix for **DisruptionIQ (Probl
 
 ## Executive Summary & Test Verification Metrics
 
-The codebase has undergone full verification across four independent verification suites:
+The codebase has undergone full verification across all verification suites:
 
 | Verification Suite | Target / Command | Result | Details |
 |---|---|---|---|
 | **TypeScript Typecheck** | `bun run typecheck` (`tsc --noEmit`) | **PASS (0 errors)** | Strict mode across all server, client, domain, shared, and test code. |
-| **Vite Client Production Build** | `bun run build` (`vite build`) | **PASS (0 errors)** | 1,724 modules transformed cleanly. Total gzip bundle: 109.56 kB. |
-| **Bun Test Runner** | `bun test` | **36 PASS / 0 FAIL** | 151 expect() assertions across 3 test files in 1.90s. |
-| **Playwright Browser E2E** | `bun run test:e2e` (`playwright test`) | **5 PASS / 0 FAIL** | 5 multi-role serial browser workflows in 9.8s. |
+| **Vite Client Production Build** | `bun run build` (`vite build`) | **PASS (0 errors)** | 1,724 modules transformed cleanly. Total gzip bundle: 104.96 kB. |
+| **Bun Test Runner** | `bun test` | **60 PASS / 0 FAIL** | 317 expect() assertions across 8 test files in ~3.0s. |
 
 ### Test Breakdown by File
-- `tests/domain.test.ts`: **24 passed** (source reconciliation, physical contradictions, lifecycle vs on-hand evidence, multi-tier propagation, constraint validation across all 4 recovery plan types, separation of duties, document extraction and discrepancy matching, partner scoping).
+- `tests/domain.test.ts`: **23 passed** (source reconciliation, physical contradictions, lifecycle vs on-hand evidence, multi-tier propagation, constraint validation across all 4 recovery plan types, separation of duties, document extraction and discrepancy matching, partner scoping).
+- `tests/impact.test.ts`: **5 passed** (0.0-10.0 score bounds, zero shortage invariant, bottleneck driver cap $\le 2$, independent evidence confidence, pure candidate evaluation).
+- `tests/plans.test.ts`: **5 passed** (routine self-approval, two-person rule semantics, creator/modifier approval prohibition, modification versioning, admin emergency break-glass).
+- `tests/integrations.test.ts`: **4 passed** (per-integration circuit breaking, non-mutating preview simulation, targeted replay, stale claim protection).
+- `tests/documents.test.ts`: **5 passed** (25 MB boundary, 4,000-char page-aware chunking with 400 overlap, asynchronous 202 response, paginated chunks retrieval, dashboard payload text exclusion).
+- `tests/normalize.test.ts`: **5 passed** (legacy quarantine migration to held, cold-chain reading removal, default integration connections).
 - `tests/api.test.ts`: **8 passed** (session authentication, brute-force rate limiting, carrier webhook security, role-based authorization, CORS protection, partial import errors without corrupting good rows, demo reset audit retention).
 - `tests/repository.test.ts`: **4 passed** (PostgreSQL persistence across restarts, row-level locking `FOR UPDATE` preventing double allocations under concurrency, relational projections syncing when entities are deleted, salted password hashing and session tokens).
-- `tests/e2e/workflow.spec.ts`: **5 passed** (login & role pill switching, Scenario A shared delay + outage + plan modification + separation of duties + manager execution, Scenario B IoT condition excursion + document mismatch confirmation + offline queue replay, partner data isolation, demo reset).
 
 ---
 

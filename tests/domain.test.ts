@@ -76,6 +76,7 @@ describe('source reconciliation', () => {
       type: 'expedite', quantity: 70, sourceId: sh.id,
       arrivesAt: s.clock, costCents: 1000, feasible: true, reasons: [],
       status: 'proposed', createdBy: 'analyst-1', version: 1, rationale: 'test',
+      riskLevel: 'routine',
       evidenceIds: [], inventoryVersion: s.version,
     };
     s.plans.push(planA);
@@ -111,6 +112,7 @@ describe('source reconciliation', () => {
       type: 'expedite', quantity: 70, sourceId: sh2.id,
       arrivesAt: s2.clock, costCents: 1000, feasible: true, reasons: [],
       status: 'proposed', createdBy: 'analyst-1', version: 1, rationale: 'test',
+      riskLevel: 'routine',
       evidenceIds: [], inventoryVersion: s2.version,
     };
     s2.plans.push(planB);
@@ -153,6 +155,7 @@ describe('source reconciliation', () => {
       type: 'reallocate', quantity: 20, sourceId: lot.id,
       arrivesAt: laterTime, costCents: 500, feasible: true, reasons: [],
       status: 'proposed', createdBy: 'analyst-1', version: 1, rationale: 'alloc test',
+      riskLevel: 'routine',
       evidenceIds: [lot.id], inventoryVersion: s.version,
     };
     s.plans.push(plan);
@@ -219,12 +222,15 @@ describe('deterministic recovery and authorization', () => {
     expect(p).toBeDefined(); const competitor = structuredClone(p); competitor.id = 'competing-plan'; s.plans.push(competitor);
     const source = s.lots.find(x => x.id === p.sourceId)!; const starting = source.quantity;
     decidePlan(s, p.id, { action: 'approve', confirmed: true }, manager);
+    expect(p.status).toBe('awaiting_second_approval');
+    const admin: Actor = { ...analyst, id: 'admin-1', role: 'admin' };
+    decidePlan(s, p.id, { action: 'approve', confirmed: true }, admin);
     expect(p.status).toBe('executed'); expect(source.quantity).toBe(starting - p.quantity);
     rejects(() => decidePlan(s, competitor.id, { action: 'approve', confirmed: true }, manager), 409);
     expect(source.quantity).toBeGreaterThanOrEqual(source.reserved);
   });
-  test('quarantined and disputed stock are excluded and only warehouse/admin can dispose', () => {
-    const s = fresh(); runScenario(s, 'B', analyst); const lot = s.lots.find(l => l.status === 'quarantined')!; expect(lot).toBeDefined();
+  test('held and disputed stock are excluded and only warehouse/admin can dispose', () => {
+    const s = fresh(); runScenario(s, 'B', analyst); const lot = s.lots.find(l => l.status === 'held')!; expect(lot).toBeDefined();
     rejects(() => setLotDisposition(s, lot.id, 'available', analyst), 403);
     setLotDisposition(s, lot.id, 'available', warehouse); expect(lot.status).toBe('available');
     lot.status = 'disputed'; rejects(() => setLotDisposition(s, lot.id, 'available', warehouse), 409);
@@ -246,15 +252,20 @@ describe('deterministic recovery and authorization', () => {
     // Manager cannot self-approve their own modification
     rejects(() => decidePlan(s, plan.id, { action: 'approve', confirmed: true }, manager), 403);
 
-    // Administrator (different actor who did not modify) can approve
+    // Administrator (different actor who did not modify) provides first approval
     const adminActor: Actor = { ...analyst, id: 'admin-actor', role: 'admin' };
     decidePlan(s, plan.id, { action: 'approve', confirmed: true }, adminActor);
+    expect(plan.status).toBe('awaiting_second_approval');
+
+    // Second independent manager provides second approval
+    const manager2: Actor = { ...analyst, id: 'manager-2', role: 'manager' };
+    decidePlan(s, plan.id, { action: 'approve', confirmed: true }, manager2);
     expect(plan.status).toBe('executed');
   });
-  test('unknown product condition policy does not apply controller thresholds', () => {
-    const s = fresh(); const lot = s.lots[0]!; lot.itemId = 'unmodeled-product';
-    const result = ingestEvent(s, event(s, 'unknown-policy', 'condition_reading', lot.id, { temperature: 37, durationMinutes: 25 }), analyst);
-    expect(result.status).toBe('invalid'); expect(result.message).toContain('Condition policy missing'); expect(s.readings).toHaveLength(0);
+  test('condition reading events are rejected as unsupported', () => {
+    const s = fresh(); const lot = s.lots[0]!;
+    const result = ingestEvent(s, event(s, 'unknown-policy', 'condition_reading' as any, lot.id, { temperature: 37, durationMinutes: 25 }), analyst);
+    expect(result.status).toBe('invalid');
   });
 });
 

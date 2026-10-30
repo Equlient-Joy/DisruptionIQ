@@ -7,11 +7,11 @@ const id = z.string().trim().min(1).max(120);
 const count = z.coerce.number().int().min(0).max(1_000_000_000);
 const date = z.string().refine(x => Number.isFinite(Date.parse(x)) && /(?:Z|[+-]\d{2}:\d{2})$/.test(x),'Use an ISO timestamp with timezone');
 const bool = z.preprocess(v => v === 'true' ? true : v === 'false' ? false : v,z.boolean());
-export const eventSchema = z.object({id,source:id,type:z.enum(['supplier_delay','shipment_eta','stock_count','warehouse_outage','condition_reading','shipment_status']),entityId:id,time:date,payload:z.record(z.string(),z.unknown())});
+export const eventSchema = z.object({id,source:id,type:z.enum(['supplier_delay','shipment_eta','stock_count','warehouse_outage','shipment_status']),entityId:id,time:date,payload:z.record(z.string(),z.unknown())});
 const schemas = {
   suppliers: z.object({id,name:id,tier:z.coerce.number().int().min(1).max(10),facility:id,components:z.preprocess(x=>typeof x==='string'?x.split('|').filter(Boolean):x,z.array(id).min(1)),approved:bool,leadHours:count,minOrder:count,capacity:count,unitCostCents:count,orgId:id}),
   warehouses: z.object({id,name:id,region:id,capacity:count,status:z.enum(['online','outage'])}),
-  lots: z.object({id,itemId:id,name:id,warehouseId:id,quantity:count,reserved:count,status:z.enum(['available','quarantined','disputed']),version:count}).refine(x=>x.reserved<=x.quantity,'Reserved units cannot exceed physical quantity'),
+  lots: z.object({id,itemId:id,name:id,warehouseId:id,quantity:count,reserved:count,status:z.enum(['available','held','quarantined','disputed']).transform(s=>s==='quarantined'?'held':s),version:count}).refine(x=>x.reserved<=x.quantity,'Reserved units cannot exceed physical quantity'),
   shipments: z.object({id,supplierId:id,warehouseId:id,itemId:id,quantity:count,status:z.enum(['scheduled','in_transit','delayed','delivered']),eta:date,baselineEta:date,etaHistory:z.preprocess(x=>typeof x==='string'?JSON.parse(x||'[]'):x??[],z.array(z.object({eta:date,at:date,source:id}))),lotId:id.optional()}),
   orders: z.object({id,customer:id,itemId:id,warehouseId:id,quantity:count.refine(x=>x>0),fulfilled:count,deadline:date,priority:z.enum(['critical','high','normal']),penaltyCents:count,status:z.enum(['open','recovering','fulfilled'])}).refine(x=>x.fulfilled<=x.quantity,'Fulfilled units cannot exceed ordered units'),
   events: eventSchema,

@@ -17,5 +17,5 @@ export const newToken = () => randomBytes(32).toString('hex');
 export const demoActors: Actor[] = [
   ['analyst', 'Alex Rivera', 'analyst'], ['manager', 'Priya Sharma', 'manager'],
   ['warehouse', 'Kabir Rao', 'warehouse'], ['procurement', 'Ananya Iyer', 'procurement'],
-  ['admin', 'Dev Admin', 'admin'], ['partner', 'Maya Chen', 'analyst'],
+  ['admin', 'Dev Admin', 'admin'], ['partner', 'Maya Chen', 'viewer'],
 ].map(([slug,name,role]) => ({ id: `${slug}-1`, name, email: `${slug}@disruptioniq.demo`, role: role as Role, orgId: slug === 'partner' ? 'partner' : 'focal' }));

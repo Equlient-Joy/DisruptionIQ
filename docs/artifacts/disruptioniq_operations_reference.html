@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Operations Technical Reference - DisruptionIQ Docs</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card-bg: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-bright: #f0f6fc;
+      --accent: #58a6ff;
+      --accent-green: #3fb950;
+      --accent-orange: #d29922;
+      --code-bg: #1f242c;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f6f8fa;
+        --card-bg: #ffffff;
+        --border: #d0d7de;
+        --text: #24292f;
+        --text-bright: #0969da;
+        --accent: #0969da;
+        --accent-green: #1a7f37;
+        --accent-orange: #9a6700;
+        --code-bg: #f6f8fa;
+      }
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      margin: 0;
+      padding: 0;
+    }
+    header {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 32px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .brand {
+      font-weight: 700;
+      font-size: 1.15rem;
+      color: var(--text-bright);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    nav a {
+      color: var(--text);
+      text-decoration: none;
+      margin-left: 20px;
+      font-size: 0.95rem;
+      padding: 6px 12px;
+      border-radius: 6px;
+      transition: background 0.2s;
+    }
+    nav a:hover, nav a.active {
+      background: var(--border);
+      color: var(--text-bright);
+    }
+    .container {
+      max-width: 1100px;
+      margin: 40px auto;
+      padding: 0 24px;
+    }
+    .markdown-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 40px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    h1, h2, h3, h4 { color: var(--text-bright); margin-top: 1.5em; }
+    h1 { border-bottom: 1px solid var(--border); padding-bottom: 0.3em; margin-top: 0; }
+    h2 { border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      padding: 16px;
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.9em;
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      text-align: left;
+    }
+    th { background: var(--code-bg); color: var(--text-bright); }
+    .diagram-container {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      margin: 24px 0;
+      text-align: center;
+      overflow-x: auto;
+    }
+    .diagram-container img, .diagram-container svg {
+      max-width: 100%;
+      height: auto;
+    }
+    .diagram-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      margin-bottom: 12px;
+      font-size: 0.85rem;
+    }
+    .btn {
+      display: inline-block;
+      padding: 6px 12px;
+      background: var(--border);
+      color: var(--text-bright);
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: 500;
+    }
+    .btn:hover { opacity: 0.85; }
+    blockquote {
+      border-left: 4px solid var(--accent);
+      margin: 0;
+      padding-left: 16px;
+      color: var(--text);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="index.html" class="brand">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      DisruptionIQ Documentation
+    </a>
+    <nav>
+      <a href="index.html">Overview Portal</a>
+      <a href="disruptioniq_implementation_report.html" class="">Implementation Report</a>
+      <a href="disruptioniq_operations_reference.html" class="active">Operations Reference</a>
+      <a href="disruptioniq_data_flows_and_architectures.html" class="">Data Flows & Lifecycles</a>
+      <a href="DIAGRAMS.md">Diagrams Catalog</a>
+    </nav>
+  </header>
+  <div class="container">
+    <div class="markdown-card">
+      <div id="content"></div>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    const rawMarkdown = "# DisruptionIQ: Operations & Systems Reference\n\nThis document serves as the authoritative, forensic technical reference manual for all domain operations, data ingestion logic, risk scoring algorithms, recovery authorizations, and data validation rules in **DisruptionIQ**.\n\n---\n\n## Table of Contents\n1. [Data Sources & Acquisition Catalog](#1-data-sources--acquisition-catalog)\n2. [Security, Session & Identity Operations](#2-security-session--identity-operations)\n3. [Repository, Transaction & Database Operations](#3-repository-transaction--database-operations)\n4. [Signal Ingestion & Event Operations](#4-signal-ingestion--event-operations)\n5. [Impact Assessment & Risk Scoring Operations](#5-impact-assessment--risk-scoring-operations)\n6. [Recovery Planning & Authorization Operations](#6-recovery-planning--authorization-operations)\n7. [Document Processing & Claim Review Operations](#7-document-processing--claim-review-operations)\n8. [Data Import Operations](#8-data-import-operations)\n9. [Incident, Lot & Task Operations](#9-incident-lot--task-operations)\n10. [AI Decision Support Operations](#10-ai-decision-support-operations)\n11. [Workspace Clearing & Governance Operations](#11-workspace-clearing--governance-operations)\n\n---\n\n## 1. Data Sources & Acquisition Catalog\n\nDisruptionIQ ingests data from multiple enterprise supply-chain streams:\n\n| Stream Name | Mechanism | Transport & Payload | Role / Boundary | Ingestion Frequency |\n| :--- | :--- | :--- | :--- | :--- |\n| **Carrier Tracking EDI/API** | Webhook or Event Intake | HTTP POST JSON (ETA, Status) | Focal Analyst / Secret | Event-driven / Streaming |\n| **Warehouse WMS Intake** | Direct Event Intake | HTTP POST JSON (Stock Counts, Outages) | Focal Warehouse / Admin | Real-time cycle count |\n| **Supplier EDI Portal** | Direct Event Intake | HTTP POST JSON (Disruptions, Lead Times) | Focal Analyst / Manager | Batch / Real-time alerts |\n| **Freight Documents & Bills** | Async Pipeline | PDF, TXT, CSV, JSON ($\\le 25\\text{ MB}$, $\\le 100$ pages) | Focal Operations | On-demand upload |\n| **Enterprise Master Catalog** | Bulk Importer | CSV or JSON Arrays ($\\le 2\\text{ MB}$, $\\le 2000$ rows) | Focal Operations | Initial / Periodic batch |\n\n---\n\n## 2. Security, Session & Identity Operations\n\n### 2.1 Demo Personas & Identity Directory\n- **`analyst@disruptioniq.demo`** (Alex Rivera): Operations Analyst (`focal`). Correlates signals, assesses order risk & generates recovery options.\n- **`manager@disruptioniq.demo`** (Priya Sharma): Supply Chain Manager (`focal`). Authorizes recovery plans, manages outages & assigns collaborative tasks.\n- **`warehouse@disruptioniq.demo`** (Kabir Rao): Warehouse Supervisor (`focal`). Inspects lot quality, manages holds & updates receiving.\n- **`procurement@disruptioniq.demo`** (Ananya Iyer): Procurement Approver (`focal`). Authorizes alternative supplier options & reviews freight documents.\n- **`admin@disruptioniq.demo`** (Dev Admin): Administrator (`focal`). Full workspace administration, security, emergency break-glass, & workspace clearing controls.\n- **`partner@disruptioniq.demo`** (Maya Chen): Partner Viewer (`partner`). Scoped external portal with shared incident and assigned task visibility.\n\n### 2.2 Password Hashing & Verification\n- **Scrypt Password Hashes**: Standard scrypt hashing via Node `crypto.scryptSync`.\n- **Timing-Safe Equality**: Hash digests are compared using `crypto.timingSafeEqual` to eliminate timing attacks.\n\n---\n\n## 3. Repository, Transaction & Database Operations\n\n### 3.1 Concurrency & Mutex Execution\n- **In-Process Promise Queue**: Serializes write operations within a node instance.\n- **PostgreSQL Row Locks**: State mutations acquire a row-level lock via `SELECT ... FROM workspaces WHERE id = 'focal' FOR UPDATE`.\n- **Normalized Projections**: Each state mutation synchronizes relational tables:\n  `suppliers`, `warehouses`, `inventory_lots`, `shipments`, `customer_orders`, `order_lines`, `integration_connections`, `integration_inbox`, `document_records`, `document_files`, `document_jobs`, and `document_chunks`.\n\n---\n\n## 4. Signal Ingestion & Event Operations\n\n### 4.1 Supported Event Types\n1. `supplier_delay`: Ingests delay hours on a supplier. Traverses downstream paths to delayed shipments and updates baseline arrival dates.\n2. `shipment_eta`: Ingests revised shipment estimated arrival times. Records revision history in `etaHistory`.\n3. `stock_count`: Ingests physical on-hand counts or lifecycle claims (`on_hand`, `dispatched`, `collected`, `received`).\n4. `warehouse_outage`: Toggles warehouse status between `online` and `outage`.\n5. `shipment_status`: Tracks delivery lifecycle states (`scheduled`, `in_transit`, `delayed`, `delivered`).\n\n### 4.2 Selective Circuit Breaking & Targeted Replay\n- Events targeting offline integrations are queued into `state.queue`.\n- Events targeting online integrations process immediately.\n- `replayQueue(state, actor, { integrationId, preview })`:\n  - `preview: true`: Runs a non-mutating simulation on an isolated clone, predicting accepted, duplicate, stale, and invalid counts.\n  - Targeted Replay: Reconciles queued events strictly for the selected integration connection.\n\n---\n\n## 5. Impact Assessment & Risk Scoring Operations\n\n### 5.1 Bounded 0.0–10.0 Scoring Formula\nThe interaction-aware impact engine (`getImpact`) evaluates unfulfilled orders chronologically:\n$$\\text{Score} = \\text{clamp}(0.0, 10.0, S_{\\text{uncovered}} + S_{\\text{deadline}} + S_{\\text{recovery}} + S_{\\text{cascade}} + S_{\\text{penalty}})$$\n\n1. **Uncovered Demand Factor**: $3.0 \\times \\text{exposureRatio}$\n2. **Priority & Deadline Factor**: $2.0 \\times \\text{exposureRatio} \\times \\text{deadlineMultiplier}$\n3. **Recovery Feasibility Factor**: $0.0$ (internal transfer feasible), $0.5$ (expedite feasible), $1.5$ (supplier feasible), $2.0 \\times \\text{exposureRatio}$ (none feasible).\n4. **Cascading Disruption Factor**: $\\min(1.5, 0.5 \\times \\text{dependentOrders} + 0.5 \\times \\text{unverifiedTier2})$.\n5. **Business Consequence Factor**: $\\min(1.5, \\text{round}(\\text{penaltyCents} / 500,000, 1))$.\n\n### 5.2 Bottleneck Drivers & Independent Confidence\n- **Top 2 Bottleneck Drivers**: At most 2 factors crossing operational thresholds are highlighted for immediate triage.\n- **Evidence Confidence**: Independent rating of `high`, `medium` (stale/volatile ETA history), or `low` (missing ETA history). Missing evidence lowers confidence without artificially inflating risk scores.\n\n---\n\n## 6. Recovery Planning & Authorization Operations\n\n### 6.1 Recovery Option Framework (`generatePlans`)\nSynthesizes candidate options across all four categories:\n1. `reallocate`: Cross-warehouse lot inventory transfer.\n2. `split_order`: Immediate partial delivery leg.\n3. `expedite`: Express transit on in-transit shipments.\n4. `alternative_supplier`: Alternative sourcing from approved Tier 1 suppliers.\n\n### 6.2 Risk Classification (`classifyPlanRisk`)\nPlans are classified as `high` risk if any of the following apply:\n- Strategy is `alternative_supplier`.\n- Impact score $\\ge 7.0$.\n- Evidence confidence is `low`.\n- Total cost $\\ge \\$2,000$ ($200,000$ cents) or penalty exposure $\\ge \\$5,000$.\n- Resource consumption $\\ge 50\\%$ of usable source lot, shipment, or supplier capacity.\nOtherwise, the plan is classified as `routine`.\n\n### 6.3 Risk-Tiered Human Authorization\n- **Routine Plans**: Executed in a single approval. Self-approval is permitted for authorized managers, procurement approvers, and administrators.\n- **High-Risk Plans (Two-Person Rule)**:\n  - First approval advances status to `'awaiting_second_approval'` and mutates **zero** operational resources.\n  - Second approval by a distinct, independent actor revalidates constraints live and commits execution atomically.\n  - Proposers and modifiers are strictly barred from approving.\n- **Emergency Break-Glass Execution**:\n  - Administrator may bypass dual approval in emergencies with explicit confirmation and non-trivial justification ($\\ge 20$ characters).\n  - Sets `reviewStatus: 'required'`, notifies stakeholders, and appends an auditable governance record.\n\n---\n\n## 7. Document Processing & Claim Review Operations\n\n### 7.1 Large Asynchronous Pipeline\n- Route-specific 25 MB body limit on `/api/documents`.\n- Upload returns `202 Accepted` with `{ id, jobId, status: 'processing' }`.\n- Original file bytes stored in Postgres `bytea` (`document_files`).\n- Background worker extracts pages via PDF.js (enforcing $\\le 100$ pages) and chunks text into 4,000-character page-aware chunks with 400-character overlap (`document_chunks`).\n- Excerpt (first 500 characters) stored in workspace state; full text is never serialized into dashboard payloads.\n- Cursor-paginated chunk retrieval via `GET /api/documents/:id/chunks`.\n- Confirmation via `POST /api/documents/:id/confirm`.\n\n---\n\n## 8. Data Import Operations\n\n### 8.1 Batch CSV / JSON Data Import (`POST /api/import`)\n- Supports `suppliers`, `warehouses`, `lots`, `shipments`, `orders`, and `events`.\n- Strict Zod schema validation per entity (up to 2,000 rows).\n- Rejects row collisions and referential integrity failures while accepting valid rows.\n- Header templates provided in the user interface for effortless judge data loading.\n\n---\n\n## 9. Incident, Lot & Task Operations\n\n### 9.1 Lot Disposition (`POST /api/lots/:id/disposition`)\n- Statuses: `'available'`, `'held'`, `'disputed'`.\n- Only authorized warehouse supervisors or administrators can change disposition.\n- Reconciling disputed inventory requires administrator authorization and a newer accepted physical count.\n\n### 9.2 Collaboration Tasks (`POST /api/tasks/:id`)\n- Tasks are scoped to participating organizations.\n- Partner viewers have read-only visibility.\n\n---\n\n## 10. AI Decision Support Operations\n\n### 10.1 AI Boundary\n- Default: `AI_FEATURES_ENABLED=false`.\n- The AI panel is hidden and `/api/ai/:id` returns 404 when disabled.\n- In Phase 1, AI does not calculate impact scores, authorize plans, or mutate operational state.\n\n---\n\n## 11. Workspace Clearing & Governance Operations\n\n### 11.1 Clear Operational Workspace (`POST /api/reset`)\n- Administrator action in demo mode.\n- Resets operational collections (suppliers, warehouses, lots, shipments, orders, incidents, events, recovery plans, and documents) to empty via `createEmptyState()`.\n- Preserves complete decision audit trail and appends an auditable `demo_reset` decision record.\n";
+    marked.setOptions({
+      gfm: true,
+      breaks: false
+    });
+    const html = marked.parse(rawMarkdown);
+    document.getElementById('content').innerHTML = html;
+
+    // Render mermaid blocks
+    mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' });
+    document.querySelectorAll('pre code.language-mermaid').forEach((block) => {
+      const container = document.createElement('div');
+      container.className = 'mermaid';
+      container.textContent = block.textContent;
+      const pre = block.parentElement;
+      const wrap = document.createElement('div');
+      wrap.className = 'diagram-container';
+      wrap.appendChild(container);
+      pre.parentElement.replaceChild(wrap, pre);
+    });
+  </script>
+</body>
+</html>

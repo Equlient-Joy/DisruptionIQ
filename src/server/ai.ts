@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import type { AiReport,State } from '../shared/types';
 import { getImpact } from '../domain/engine';
 
-export const aiConfigured=()=>Boolean(process.env.AI_API_KEY);
+export const aiEnabled = () => process.env.AI_FEATURES_ENABLED === 'true';
+export const aiConfigured = () => aiEnabled() && Boolean(process.env.AI_API_KEY);
 export async function summarizeIncident(state:State,incidentId:string):Promise<AiReport> {
   const incident=state.incidents.find(i=>i.id===incidentId);
   if(!incident) throw new Error('Incident not found');

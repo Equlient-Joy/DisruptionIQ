@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data Flows & Architecture Models - DisruptionIQ Docs</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card-bg: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-bright: #f0f6fc;
+      --accent: #58a6ff;
+      --accent-green: #3fb950;
+      --accent-orange: #d29922;
+      --code-bg: #1f242c;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f6f8fa;
+        --card-bg: #ffffff;
+        --border: #d0d7de;
+        --text: #24292f;
+        --text-bright: #0969da;
+        --accent: #0969da;
+        --accent-green: #1a7f37;
+        --accent-orange: #9a6700;
+        --code-bg: #f6f8fa;
+      }
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      margin: 0;
+      padding: 0;
+    }
+    header {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 32px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .brand {
+      font-weight: 700;
+      font-size: 1.15rem;
+      color: var(--text-bright);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    nav a {
+      color: var(--text);
+      text-decoration: none;
+      margin-left: 20px;
+      font-size: 0.95rem;
+      padding: 6px 12px;
+      border-radius: 6px;
+      transition: background 0.2s;
+    }
+    nav a:hover, nav a.active {
+      background: var(--border);
+      color: var(--text-bright);
+    }
+    .container {
+      max-width: 1100px;
+      margin: 40px auto;
+      padding: 0 24px;
+    }
+    .markdown-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 40px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    h1, h2, h3, h4 { color: var(--text-bright); margin-top: 1.5em; }
+    h1 { border-bottom: 1px solid var(--border); padding-bottom: 0.3em; margin-top: 0; }
+    h2 { border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      padding: 16px;
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.9em;
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      text-align: left;
+    }
+    th { background: var(--code-bg); color: var(--text-bright); }
+    .diagram-container {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      margin: 24px 0;
+      text-align: center;
+      overflow-x: auto;
+    }
+    .diagram-container img, .diagram-container svg {
+      max-width: 100%;
+      height: auto;
+    }
+    .diagram-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      margin-bottom: 12px;
+      font-size: 0.85rem;
+    }
+    .btn {
+      display: inline-block;
+      padding: 6px 12px;
+      background: var(--border);
+      color: var(--text-bright);
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: 500;
+    }
+    .btn:hover { opacity: 0.85; }
+    blockquote {
+      border-left: 4px solid var(--accent);
+      margin: 0;
+      padding-left: 16px;
+      color: var(--text);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="index.html" class="brand">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      DisruptionIQ Documentation
+    </a>
+    <nav>
+      <a href="index.html">Overview Portal</a>
+      <a href="disruptioniq_implementation_report.html" class="">Implementation Report</a>
+      <a href="disruptioniq_operations_reference.html" class="">Operations Reference</a>
+      <a href="disruptioniq_data_flows_and_architectures.html" class="active">Data Flows & Lifecycles</a>
+      <a href="DIAGRAMS.md">Diagrams Catalog</a>
+    </nav>
+  </header>
+  <div class="container">
+    <div class="markdown-card">
+      <div id="content"></div>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    const rawMarkdown = "# DisruptionIQ: Data Flows, Execution Pipelines & Architecture Models\n\nThis document models the end-to-end data flows, lifecycle state machines, execution pipelines, and mathematical validation criteria of **DisruptionIQ**.\n\n---\n\n## 1. End-to-End System Data Flow Architecture\n\nThe following diagram illustrates how raw source data enters the platform from multiple origins, passes through validation, concurrency locks, and domain engines, and synchronizes to persistent PostgreSQL storage and client views.\n\n```mermaid\nflowchart TD\n    classDef source fill:#f2f4f8,stroke:#3b5998,stroke-width:2px;\n    classDef engine fill:#e8f4f0,stroke:#238b72,stroke-width:2px;\n    classDef storage fill:#fff7e6,stroke:#d97706,stroke-width:2px;\n    classDef client fill:#fdf2f8,stroke:#db2777,stroke-width:2px;\n\n    subgraph DataSources[\"External & Inbound Sources\"]\n        S1[\"Carrier Webhook (POST /api/webhooks/carrier)\"]:::source\n        S2[\"Operator Manual Event Form (POST /api/events)\"]:::source\n        S3[\"CSV / JSON Bulk Importer (POST /api/import)\"]:::source\n        S4[\"Freight Document Intake (POST /api/documents up to 25 MB)\"]:::source\n        S5[\"Integration Continuity Inbox (Targeted Replay)\"]:::source\n    end\n\n    subgraph TransportAuth[\"Transport & Ingress Layer\"]\n        T1[\"Route Body Limits (25MB docs / 8MB general / 2MB imports)\"]\n        T2[\"Session Token Cookie (diq_session) Validation\"]\n        T3[\"Role & Org RBAC Check (6 Switchable Personas)\"]\n        T4[\"CSRF / Origin Header Guard\"]\n    end\n\n    subgraph ProcessingPipeline[\"Authoritative State Mutation Pipeline\"]\n        direction TB\n        L1[\"Repository Mutex Lock (In-Process Queue)\"]\n        L2[\"PostgreSQL SELECT ... FOR UPDATE (Row Lock)\"]\n        \n        subgraph DomainEngines[\"Domain Logic & State Engines\"]\n            E1[\"Validation & Deduplication Engine (canonical sorting)\"]:::engine\n            E2[\"Per-Integration Continuity Inboxes (carrier/warehouse/supplier)\"]:::engine\n            E3[\"Stale & Contradiction Checker (Dispute Logic)\"]:::engine\n            E4[\"Dependency Traversal (upstreamPaths)\"]:::engine\n            E5[\"Interaction-Aware Impact Engine (0.0-10.0 Scoring)\"]:::engine\n            E6[\"Recovery Option Framework (Pure Candidate Enumeration)\"]:::engine\n            E7[\"Risk-Tiered Authorization & Break-Glass Engine (decidePlan)\"]:::engine\n        end\n\n        L3[\"Audit Log Appender (Immutable Decisions)\"]\n        L4[\"Version Increment (state.version += 1)\"]\n    end\n\n    subgraph StorageLayer[\"Dual-Mode PostgreSQL Storage Engine\"]\n        DB1[(\"workspaces table (Authoritative JSONB State)\")]:::storage\n        DB2[(\"Relational Projections (Drizzle ORM)\n        - suppliers, warehouses, inventory_lots\n        - shipments, customer_orders, order_lines\n        - integration_connections & integration_inbox\n        - document_records, document_files, document_chunks\")]:::storage\n        DB3[(\"app_sessions (SHA-256 Hashes)\")]:::storage\n    end\n\n    subgraph EgressClients[\"Clients & Sinks\"]\n        C1[\"Focal Control Room UI (Full State & Exposure)\"]:::client\n        C2[\"Partner Supplier Portal (Redacted Scoped View)\"]:::client\n        C3[\"AI Decision Support Boundary (Disabled by default in Phase 1)\"]:::client\n    end\n\n    DataSources --> TransportAuth\n    TransportAuth --> L1\n    L1 --> L2\n    L2 --> DomainEngines\n    DomainEngines --> L3\n    L3 --> L4\n    L4 --> DB1\n    L4 --> DB2\n    T2 <--> DB3\n    \n    DB1 -->|Read & Filter| C1\n    DB1 -->|\"redact() Filter\"| C2\n    E5 & E6 -->|Prompt Context with SHA-256 Hash| C3\n```\n\n---\n\n## 2. Inbound Signal Reconciliation & Ingestion Pipeline\n\nEvery raw event passing through `ingestEvent()` undergoes an exact multi-stage decision tree before touching operational records.\n\n```mermaid\nflowchart TD\n    Start([\"Inbound EventInput\"]) --> V1{\"Schema & Entity Valid?\n    - Known Entity ID?\n    - Valid Timestamp?\n    - Physical Quantity >= 0?\n    - Valid Status Transition?\"}\n\n    V1 -- No --> S_Invalid[\"Status = 'invalid'\n    (Record raw claim, do not apply)\"]\n    \n    V1 -- Yes --> V2{\"Idempotency Key Matches Prior Event?\"}\n    \n    V2 -- Yes --> V3{\"Payload Matches Prior?\n    (canonical JSON compare)\"}\n    V3 -- Yes --> S_Dup[\"Status = 'duplicate'\n    (Ignore idempotently)\"]\n    V3 -- No --> S_ConfKey[\"Status = 'conflict'\n    (Idempotency key reused with new data)\"]\n\n    V2 -- No --> V4{\"Specific Integration Connection Offline?\n    (carrier / warehouse / supplier)\"}\n    V4 -- Yes --> S_Queued[\"Status = 'queued'\n    (Buffer in integration inbox for targeted replay)\"]\n\n    V4 -- No --> V5{\"Effective Time < Latest Accepted Time?\"}\n    V5 -- Yes --> S_Stale[\"Status = 'stale'\n    (Retain evidence, preserve newer truth)\"]\n\n    V5 -- No --> V6{\"Contradictory Accepted Event at Same Time?\"}\n    V6 -- Yes --> V7{\"Is stock_count on_hand?\"}\n    V7 -- Yes --> S_Dispute[\"Status = 'conflict'\n    - Mark lot.status = 'disputed'\n    - Create 'stock_conflict' incident\"]\n    V7 -- No --> S_Conf[\"Status = 'conflict'\"]\n\n    V6 -- No --> S_Accepted[\"Status = 'accepted'\n    - Advance state.clock if time > clock\n    - Execute applyAccepted()\"]\n\n    S_Invalid & S_Dup & S_ConfKey & S_Queued & S_Stale & S_Dispute & S_Conf & S_Accepted --> Audit[\"Append Decision Audit Record\n    (evidenceIds = [input.id])\"]\n```\n\n---\n\n## 3. Impact Assessment & Risk Scoring Logic Flow\n\nThe interaction-aware impact calculation engine (`getImpact()`) translates network disruptions, inventory holds, and warehouse outages into customer delivery exposures bounded between **0.0 and 10.0**.\n\n```mermaid\nflowchart TD\n    StartCalc([\"Run getImpact(state)\"]) --> Step1[\"Initialize Available Warehouse Stock\n    - Filter warehouses where status == 'online'\n    - Filter lots where status == 'available' (exclude held/disputed)\n    - Available = lot.quantity - lot.reserved\"]\n\n    Step1 --> Step2[\"Initialize Available Inbound Shipments\n    - Compute availableShipment() for all shipments\n    - Accounts for physical receipts and expedite deductions\"]\n\n    Step2 --> Step3[\"Sort Unfulfilled Customer Orders\n    Priority: critical (3) > high (2) > normal (1)\n    Tie-breakers: deadline ascending, order ID\"]\n\n    Step3 --> LoopOrders{\"Iterate Over Each Order\"}\n\n    LoopOrders --> DeductStock[\"1. Consume usable local warehouse inventory\n    missing = quantity - fulfilled - coveredStock\"]\n\n    DeductStock --> DeductShipments[\"2. Consume inbound shipments matching item & warehouse\n    Condition: warehouse online AND shipment.eta <= order.deadline\n    missing = missing - coveredShipment\"]\n\n    DeductShipments --> CheckCandidates[\"3. Evaluate Pure Recovery Candidates\n    (internal_transfer, expedite, alternative_supplier)\"]\n\n    CheckCandidates --> ScoreFormula[\"4. Calculate 0.0 - 10.0 Impact Score:\n    + Uncovered Demand: round(3.0 * exposureRatio, 1)\n    + Priority & Deadlines: round(2.0 * exposureRatio * deadlineMult, 1)\n    + Feasibility Tier: round(tierWeight * exposureRatio, 1)\n    + Cascading Disruption: min(1.5, 0.5 * dependentOrders + 0.5 * unverifiedTier2)\n    + Business Consequence: min(1.5, round(penaltyCents / 500000, 1))\n    Final Score = clamp(0.0, 10.0)\"]\n\n    ScoreFormula --> DriversAndConfidence[\"5. Determine Drivers & Confidence:\n    - Drivers: Up to 2 highest threshold-crossing factors\n    - Confidence: high (full evidence), medium (stale/volatile ETA), low (missing ETA)\"]\n\n    DriversAndConfidence --> LoopOrders\n    LoopOrders -- Complete --> SortImpacts[\"Sort Results:\n    1. Score descending\n    2. Hours remaining ascending\n    3. Order ID\"]\n    SortImpacts --> ReturnImpacts([\"Return Impact[]\"])\n```\n\n---\n\n## 4. Recovery Strategy Feasibility & Two-Person Authorization Pipeline\n\n```mermaid\nflowchart TD\n    classDef pass fill:#e6f4ea,stroke:#137333;\n    classDef fail fill:#fce8e6,stroke:#c5221f;\n\n    subgraph Gen[\"Recovery Option Framework (generatePlans)\"]\n        direction TB\n        O[Exposed Order with Shortage]\n        C1[\"Type: 'reallocate'\n        (From other warehouse lots)\"]\n        C2[\"Type: 'split_order'\n        (Partial leg from other warehouse)\"]\n        C3[\"Type: 'expedite'\n        (In-transit shipment express routing)\"]\n        C4[\"Type: 'alternative_supplier'\n        (Approved Tier 1 suppliers)\"]\n        O --> C1 & C2 & C3 & C4\n    end\n\n    subgraph Val[\"Pure Constraint Validation\"]\n        direction TB\n        K1{\"Receiving Warehouse\n        Online & Capacity >= Qty?\"}\n        K2{\"Lot Available &\n        Usable Stock >= Qty?\"}\n        K3{\"Shipment In-Transit &\n        Available Qty >= Qty?\"}\n        K4{\"Supplier Approved &\n        Capacity >= Qty >= MinOrder &\n        No Disrupted Tier 2 Links?\"}\n        K5{\"Arrival Time <= Order Deadline?\"}\n\n        C1 --> K1 --> K2 --> K5\n        C2 --> K1 --> K2 --> K5\n        C3 --> K1 --> K3 --> K5\n        C4 --> K1 --> K4 --> K5\n    end\n\n    K5 -- Constraints Pass --> P_Feas[\"Plan Feasible = true\"]:::pass\n    K5 -- Constraints Fail --> P_Infeas[\"Plan Feasible = false\n    (Retain with failure reasons)\"]:::fail\n\n    subgraph Auth[\"Risk-Tiered Authorization & Break-Glass\"]\n        direction TB\n        ClassifyRisk{\"Classify Plan Risk:\n        - Alternative supplier?\n        - Score >= 7.0?\n        - Low confidence?\n        - Cost >= $2,000 / Penalty >= $5,000?\n        - Stock deduction >= 50%?\"}\n\n        ClassifyRisk -- Routine --> RoutineFlow[\"Routine Approval:\n        Single authorized manager / procurement / admin.\n        Self-approval permitted.\"]\n        \n        ClassifyRisk -- High-Risk --> HighRiskFlow[\"Two-Person Rule:\n        Approval 1: Status -> 'awaiting_second_approval' (0 mutation)\n        Approval 2: Distinct independent approver commits execution.\n        Creator and modifier strictly barred from approving.\"]\n\n        BreakGlass{\"Admin Emergency Break-Glass?\n        - Actor must be admin\n        - Reason >= 20 characters\n        - Explicit confirmation\"}\n        \n        BreakGlass -- Commits --> BGCommit[\"Break-Glass Execution:\n        Attaches reviewStatus: 'required'\n        Appends audited governance record\"]:::pass\n    end\n\n    P_Feas --> ClassifyRisk\n```\n\n---\n\n## 5. Lifecycle State Machine Diagrams\n\n### 5.1 Event Intake Status Lifecycle\n```mermaid\nstateDiagram-v2\n    [*] --> Ingestion\n    Ingestion --> invalid: Schema / Entity / Range Failure\n    Ingestion --> duplicate: Idempotency Key & Canonical Payload Match\n    Ingestion --> queued: Targeted Integration Offline\n    Ingestion --> stale: Effective Time < Latest Accepted Time\n    Ingestion --> conflict: Same Time / Scope Contradiction\n    Ingestion --> accepted: Valid & Authoritative\n\n    queued --> Ingestion: Targeted Replay after Outage Restored\n    conflict --> [*]: Preserved in Journal as Evidence\n    duplicate --> [*]: Safely Ignored\n    invalid --> [*]: Preserved in Journal\n    stale --> [*]: Preserved in Journal\n    accepted --> OperationalCommit: applyAccepted()\n    OperationalCommit --> [*]\n```\n\n### 5.2 Inventory Lot Status Lifecycle\n```mermaid\nstateDiagram-v2\n    [*] --> available: Initial Ingestion / Receipt\n    available --> held: Manual Hold by Warehouse Supervisor or Admin\n    available --> disputed: Contradictory on_hand Stock Count\n    \n    held --> available: Quality Release by Warehouse / Admin\n    \n    disputed --> available: Reconciled by Admin with Newer Accepted Count\n    disputed --> [*]: Stock Remains Excluded from Allocations\n```\n\n### 5.3 Recovery Plan Status Lifecycle\n```mermaid\nstateDiagram-v2\n    [*] --> proposed: Generated by Operator or Deterministic Engine\n    proposed --> proposed: Modified (quantity adjusted, version++)\n    proposed --> rejected: Rejected by Reviewer\n    proposed --> stale: Pre-execution constraint revalidation fails\n    proposed --> awaiting_second_approval: First Approval (High-Risk Plan)\n    awaiting_second_approval --> executed: Second Distinct Approval Commits\n    proposed --> executed: Single Approval (Routine Plan)\n    proposed --> executed: Admin Break-Glass Execution (Reason >= 20 chars)\n    \n    rejected --> [*]\n    stale --> [*]\n    executed --> [*]\n```\n\n### 5.4 Freight Document Claim Status Lifecycle\n```mermaid\nstateDiagram-v2\n    [*] --> uploading: Upload Initiated (up to 25 MB / 100 pages)\n    uploading --> processing: Worker Claims Async Job\n    processing --> failed: Exceeds 100 Pages or Unparseable Bytes\n    processing --> review: Missing Fields or Scanned Text\n    processing --> mismatch: Shipment Not Found or Quantity Discrepancy\n    processing --> matched: All Fields Valid & Align with Shipment\n    \n    review --> confirmed: Explicit Reviewer Confirmation\n    mismatch --> confirmed: Explicit Reviewer Confirmation\n    matched --> confirmed: Explicit Reviewer Confirmation\n    \n    confirmed --> [*]: Document Claim Confirmed in Decision Trail\n    failed --> [*]: Actionable Error Preserved\n```\n\n---\n\n## 6. Mathematical Evaluation & Correctness Criteria\n\nTo evaluate whether DisruptionIQ operations are executing correctly, verify the following mathematical bounds and logic constraints:\n\n### 6.1 Inventory Accounting Conservation Invariant\nFor any inventory lot $L$:\n$$0 \\le L.\\text{reserved} \\le L.\\text{quantity}$$\n$$\\text{usableStock}(L) = \\begin{cases} L.\\text{quantity} - L.\\text{reserved} & \\text{if } L.\\text{status} = \\text{'available'} \\land \\text{warehouse is online} \\\\ 0 & \\text{otherwise} \\end{cases}$$\n\n### 6.2 Partial Delivery & Expedite Accounting Invariant\nFor any shipment $S$ with physical receipts $R_1, \\dots, R_m$ and expedite plans $E_1, \\dots, E_k$:\n$$\\text{physicalReceived} + \\text{expedited} \\le S.\\text{quantity}$$\n$$\\text{availableShipment}(S) = \\begin{cases} 0 & \\text{if } S.\\text{status} = \\text{'delivered'} \\\\ \\max(0, S.\\text{quantity} - (\\text{physicalReceived} + \\text{expedited})) & \\text{otherwise} \\end{cases}$$\nWhen an expedite plan of quantity $Q$ executes, it reserves $Q$ units of transit capacity. Subsequent cumulative delivery receipts of value $V$ add newly received stock $\\Delta$ according to:\n$$\\Delta = \\max\\left(0, \\max(V - \\text{expedited}, 0) - \\text{physicalReceived}\\right)$$\nThis guarantees that units expedited express are never counted twice when the underlying container arrives.\n\n### 6.3 Customer Order Exposure Invariant\nFor any open order $O$:\n$$0 \\le O.\\text{fulfilled} \\le O.\\text{quantity}$$\n$$\\text{shortage}(O) \\le O.\\text{quantity} - O.\\text{fulfilled}$$\nAn order's uncovered shortage cannot exceed its remaining unfulfilled units.\n\n### 6.4 Risk Score Bounding & Drivers\nFor any impact assessment $I$:\n$$0.0 \\le I.\\text{score} \\le 10.0$$\nScore calculation is strictly bounded between $0.0$ and $10.0$ with 1 decimal place. Exactly zero shortage yields $0.0$.\n$$\\text{bottleneckDrivers} \\le 2$$\nAt most two primary bottleneck factors crossing operational thresholds are highlighted for immediate human triage.\n\n### 6.5 Risk-Tiered Governance Invariant\nFor routine actions, authorized self-approval by manager, procurement, or admin is permitted. For high-risk actions ($S \\ge 7.0$, alternative supplier, cost $\\ge \\$2,000$, penalty $\\ge \\$5,000$, consumption $\\ge 50\\%$, or low confidence):\n$$\\text{approvals}.\\text{length} = 2 \\land A_1.\\text{id} \\ne A_2.\\text{id} \\land A_i.\\text{id} \\ne P.\\text{createdBy} \\land A_i.\\text{id} \\ne P.\\text{lastModifiedBy}$$\nBreak-glass execution permits an administrator to bypass the dual approval requirement only with an auditable justification of $\\ge 20$ characters, setting `reviewStatus: 'required'`.\n";
+    marked.setOptions({
+      gfm: true,
+      breaks: false
+    });
+    const html = marked.parse(rawMarkdown);
+    document.getElementById('content').innerHTML = html;
+
+    // Render mermaid blocks
+    mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' });
+    document.querySelectorAll('pre code.language-mermaid').forEach((block) => {
+      const container = document.createElement('div');
+      container.className = 'mermaid';
+      container.textContent = block.textContent;
+      const pre = block.parentElement;
+      const wrap = document.createElement('div');
+      wrap.className = 'diagram-container';
+      wrap.appendChild(container);
+      pre.parentElement.replaceChild(wrap, pre);
+    });
+  </script>
+</body>
+</html>

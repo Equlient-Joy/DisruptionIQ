@@ -31,7 +31,7 @@ import {
   WifiOff,
   X,
 } from 'lucide-react';
-import type { DashboardResponse, Role, Actor } from '../shared/types';
+import type { DashboardResponse, Role, Actor, ActionCard } from '../shared/types';
 import { roleLabels } from '../shared/types';
 import { request, useCommand, ApiError, type Command } from './api';
 import type { Page, Dialog, ViewProps } from './model';
@@ -40,6 +40,7 @@ import { Overview, Incidents } from './components/operations';
 import { Network, Inventory } from './components/resources';
 import { Evidence, Collaboration, History } from './components/evidence';
 import { WorkflowDialog } from './components/forms';
+import { AiCopilotDrawer } from './components/ai-copilot';
 
 interface DemoUserDef {
   label: string;
@@ -54,7 +55,7 @@ const DEMO_ACCOUNTS: DemoUserDef[] = [
   {
     label: 'Operations Analyst',
     role: 'analyst',
-    email: 'analyst@disruptioniq.local',
+    email: 'analyst@disruptioniq.demo',
     name: 'Alex Rivera',
     orgId: 'focal',
     description: 'Correlate signals, assess order risk & generate recovery options',
@@ -62,23 +63,23 @@ const DEMO_ACCOUNTS: DemoUserDef[] = [
   {
     label: 'Supply Chain Manager',
     role: 'manager',
-    email: 'manager@disruptioniq.local',
+    email: 'manager@disruptioniq.demo',
     name: 'Priya Sharma',
     orgId: 'focal',
     description: 'Authorize recovery plans, manage outages & assign collaborative tasks',
   },
   {
-    label: 'Warehouse Operator',
+    label: 'Warehouse Supervisor',
     role: 'warehouse',
-    email: 'warehouse@disruptioniq.local',
+    email: 'warehouse@disruptioniq.demo',
     name: 'Kabir Rao',
     orgId: 'focal',
-    description: 'Inspect lot quality, quarantine stock & update receiving',
+    description: 'Inspect lot quality, manage holds & update receiving',
   },
   {
     label: 'Procurement Approver',
     role: 'procurement',
-    email: 'procurement@disruptioniq.local',
+    email: 'procurement@disruptioniq.demo',
     name: 'Ananya Iyer',
     orgId: 'focal',
     description: 'Authorize alternative supplier options & review freight documents',
@@ -86,18 +87,18 @@ const DEMO_ACCOUNTS: DemoUserDef[] = [
   {
     label: 'Administrator',
     role: 'admin',
-    email: 'admin@disruptioniq.local',
+    email: 'admin@disruptioniq.demo',
     name: 'Dev Admin',
     orgId: 'focal',
-    description: 'Full workspace administration, security & scenario reset controls',
+    description: 'Full workspace administration, security & workspace clearing controls',
   },
   {
-    label: 'Partner Supplier: Nexus',
-    role: 'analyst',
-    email: 'partner@nexus-components.example',
+    label: 'Partner Viewer: Nexus',
+    role: 'viewer',
+    email: 'partner@disruptioniq.demo',
     name: 'Maya Chen',
     orgId: 'partner',
-    description: 'External partner portal with incident-scoped task collaboration',
+    description: 'External partner portal with scoped incident and task visibility',
   },
 ];
 
@@ -109,7 +110,7 @@ interface LoginProps {
 }
 
 function LoginPage({ onLogin, loading, error, defaultPassword = 'disruption-demo' }: LoginProps) {
-  const [email, setEmail] = useState('analyst@disruptioniq.local');
+  const [email, setEmail] = useState('analyst@disruptioniq.demo');
   const [password, setPassword] = useState(defaultPassword);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -211,6 +212,7 @@ export default function App() {
   const queryClient = useQueryClient();
   const [page, setPage] = useState<Page>('overview');
   const [selectedIncidentId, setSelectedIncidentId] = useState<string>();
+  const [copilotOpen, setCopilotOpen] = useState(false);
   const [dialog, setDialog] = useState<Dialog>();
   const [commandSuccess, setCommandSuccess] = useState<string>();
   const [commandError, setCommandError] = useState<string>();
@@ -268,6 +270,35 @@ export default function App() {
     setCommandError(undefined);
     setDialog(targetDialog);
   }, []);
+
+  const handleTriggerActionCard = useCallback(
+    async (card: ActionCard) => {
+      if (card.cardType === 'plan_action_prompt') {
+        if (card.planId) {
+          const plan = data?.state.plans.find(p => p.id === card.planId);
+          if (plan) {
+            open({ type: 'plan', plan, action: 'approve' });
+          }
+        }
+        navigate('incidents', card.incidentId);
+      } else if (card.cardType === 'lot_hold_prompt' && card.lotId) {
+        if (card.targetStatus) {
+          await execute(
+            { path: `/lots/${card.lotId}/disposition`, body: { status: card.targetStatus } },
+            `Lot ${card.lotId} updated to ${card.targetStatus}`,
+          );
+        }
+        navigate('inventory');
+      } else if (card.cardType === 'filter_prompt') {
+        if (card.incidentId) {
+          navigate('incidents', card.incidentId);
+        } else {
+          navigate('overview');
+        }
+      }
+    },
+    [data, open, navigate, execute],
+  );
 
   useEffect(() => {
     if (commandSuccess) {
@@ -351,7 +382,6 @@ export default function App() {
   const queueCount = state.queue.length;
   const openTasksCount = state.tasks.filter(task => task.status === 'open').length;
 
-  const canRunScenarios = actor.orgId === 'focal' && ['analyst', 'manager', 'admin'].includes(actor.role);
   const canReset = actor.orgId === 'focal' && actor.role === 'admin';
 
   const viewProps: ViewProps = {
@@ -505,42 +535,15 @@ export default function App() {
           </div>
 
           <div className="topbar-right">
-            {/* Scenario buttons */}
-            {canRunScenarios ? (
-              <div className="scenario-controls">
-                <button
-                  type="button"
-                  className="button secondary small scenario-button"
-                  disabled={command.isPending}
-                  onClick={() =>
-                    execute(
-                      { path: '/scenarios', body: { scenario: 'A' } },
-                      'Scenario A executed: Shared supplier delay and warehouse outage triggered.',
-                    )
-                  }
-                  title="Scenario A: delay and warehouse outage across multi-tier supplier paths"
-                >
-                  <Play size={13} />
-                  <span>Scenario A (Delay + Outage)</span>
-                </button>
-
-                <button
-                  type="button"
-                  className="button secondary small scenario-button"
-                  disabled={command.isPending}
-                  onClick={() =>
-                    execute(
-                      { path: '/scenarios', body: { scenario: 'B' } },
-                      'Scenario B executed: Cold-chain temperature excursion, document mismatch, and carrier outage triggered.',
-                    )
-                  }
-                  title="Scenario B: temperature excursion, document mismatch, and carrier outage"
-                >
-                  <Play size={13} />
-                  <span>Scenario B (Quality + Doc + Outage)</span>
-                </button>
-              </div>
-            ) : null}
+            <button
+              type="button"
+              className="button secondary small copilot-trigger-btn"
+              onClick={() => setCopilotOpen(true)}
+              title="DisruptionIQ AI Copilot"
+            >
+              <Sparkles size={16} />
+              <span>Ask Copilot</span>
+            </button>
 
             {canReset ? (
               <button
@@ -548,10 +551,10 @@ export default function App() {
                 className="button secondary small reset-button"
                 disabled={command.isPending}
                 onClick={() => open({ type: 'reset' })}
-                title="Reset synthetic workspace"
+                title="Clear operational records while preserving audit evidence"
               >
                 <RotateCcw size={13} />
-                <span>Reset Demo</span>
+                <span>Clear workspace</span>
               </button>
             ) : null}
 
@@ -630,6 +633,17 @@ export default function App() {
           error={commandError}
         />
       ) : null}
+
+      {/* DisruptionIQ AI Copilot Drawer */}
+      <AiCopilotDrawer
+        isOpen={copilotOpen}
+        onClose={() => setCopilotOpen(false)}
+        navigate={navigate}
+        activePage={page}
+        activeEntityId={selectedIncidentId}
+        actor={actor}
+        onTriggerActionCard={handleTriggerActionCard}
+      />
     </div>
   );
 }

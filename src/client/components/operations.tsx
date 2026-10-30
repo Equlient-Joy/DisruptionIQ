@@ -1,8 +1,9 @@
-import { Activity, ArrowRight, ArrowUpRight, Bell, Box, Check, ChevronRight, Clock3, GitBranch, Layers3, ListChecks, ShieldCheck, Sparkles, TriangleAlert, Truck, Zap } from 'lucide-react';
+import { Activity, ArrowRight, ArrowUpRight, Bell, Box, Check, ChevronRight, Clock3, GitBranch, Layers3, ListChecks, ShieldAlert, ShieldCheck, Sparkles, TriangleAlert, Truck, Zap } from 'lucide-react';
 import { useState } from 'react';
 import type { Impact, Incident, RecoveryPlan } from '../../shared/types';
 import type { ViewProps } from '../model';
 import { Badge, Empty, formatTime, LinkButton, money, number, Panel, SectionHeading } from './ui';
+import { AiActivityFeed } from './ai-activity';
 
 const planNames = { reallocate: 'Reallocate inventory', expedite: 'Expedite shipment', alternative_supplier: 'Alternative supplier', split_order: 'Split customer order' };
 const planIcons = { reallocate: Box, expedite: Zap, alternative_supplier: GitBranch, split_order: Layers3 };
@@ -14,7 +15,54 @@ export function RiskTable({ data, navigate, impacts = data.impacts }: Pick<ViewP
   return <div className="table-scroll"><table><thead><tr><th>Customer order</th><th>Priority</th><th>Shortage</th><th>Deadline · UTC</th><th>Risk score</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{sorted.map(impact => {
     const order = orders.get(impact.orderId);
     if (!order) return null;
-    return <tr key={impact.orderId}><td><strong>{order.customer}</strong><span className="table-sub">{order.id} · {order.itemId}</span><details className="risk-factors"><summary>Why this order is at risk</summary><ul>{impact.factors.map((factor, i) => <li key={i}>{factor}</li>)}</ul><div className="path-list">{impact.paths.map((path, i) => <span key={i}>{path}</span>)}</div></details></td><td><Badge value={order.priority}/></td><td><strong>{number(impact.shortage)}</strong><span className="table-sub">of {number(order.quantity)} units</span></td><td>{formatTime(order.deadline)}<span className={`table-sub ${impact.hoursRemaining < 12 ? 'danger-text' : ''}`}>{impact.hoursRemaining <= 0 ? 'Deadline passed' : `${Math.round(impact.hoursRemaining)}h remaining`}</span></td><td><div className="score"><strong>{impact.score}</strong><div className="score-track"><span style={{ width: `${Math.min(100, impact.score)}%` }}/></div></div></td><td><button className="icon-button" aria-label={`View incident for ${order.id}`} onClick={() => navigate('incidents', impact.incidentIds[0])}><ArrowUpRight size={18}/></button></td></tr>;
+    return <tr key={impact.orderId}>
+      <td>
+        <strong>{order.customer}</strong>
+        <span className="table-sub">{order.id} · {order.itemId}</span>
+        <details className="risk-factors">
+          <summary>Why this order is at risk</summary>
+          <ul>{impact.factors.map((factor, i) => <li key={i}>{factor}</li>)}</ul>
+          {impact.factorScores ? (
+            <div className="factor-breakdown" style={{ marginTop: '6px', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+              <div>Uncovered demand: <strong>{impact.factorScores.uncoveredDemand.score.toFixed(1)}</strong></div>
+              <div>Deadline pressure: <strong>{impact.factorScores.deadlinePressure.score.toFixed(1)}</strong></div>
+              <div>Recovery feasibility: <strong>{impact.factorScores.recoveryFeasibility.score.toFixed(1)}</strong></div>
+              <div>Cascading exposure: <strong>{impact.factorScores.cascadingExposure.score.toFixed(1)}</strong></div>
+              <div>Business consequence: <strong>{impact.factorScores.businessConsequence.score.toFixed(1)}</strong></div>
+            </div>
+          ) : null}
+          {impact.confidenceReasons?.length ? (
+            <ul className="confidence-reasons" style={{ marginTop: '6px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              {impact.confidenceReasons.map((reason, i) => <li key={i}>{reason}</li>)}
+            </ul>
+          ) : null}
+          <div className="path-list">{impact.paths.map((path, i) => <span key={i}>{path}</span>)}</div>
+        </details>
+      </td>
+      <td><Badge value={order.priority}/></td>
+      <td><strong>{number(impact.shortage)}</strong><span className="table-sub">of {number(order.quantity)} units</span></td>
+      <td>{formatTime(order.deadline)}<span className={`table-sub ${impact.hoursRemaining < 12 ? 'danger-text' : ''}`}>{impact.hoursRemaining <= 0 ? 'Deadline passed' : `${Math.round(impact.hoursRemaining)}h remaining`}</span></td>
+      <td>
+        <div className="score">
+          <strong>{impact.score.toFixed(1)} / 10</strong>
+          <div className="score-track"><span style={{ width: `${Math.min(100, (impact.score / 10) * 100)}%` }}/></div>
+        </div>
+        <div className="score-meta" style={{ display: 'flex', gap: '4px', marginTop: '4px', flexWrap: 'wrap' }}>
+          <Badge value={impact.band || 'low'} label={`${impact.band || 'low'} risk`} />
+          <Badge value={impact.confidence || 'high'} label={`${impact.confidence || 'high'} conf`} />
+        </div>
+        {impact.drivers?.length ? (
+          <div className="driver-list" style={{ display: 'flex', gap: '4px', marginTop: '4px', flexWrap: 'wrap' }}>
+            {impact.drivers.map((driver, i) => (
+              <span key={i} className="driver-tag" style={{ fontSize: '0.72rem', background: 'var(--bg-subtle)', padding: '1px 6px', borderRadius: '4px', border: '1px solid var(--border-light)' }}>
+                {driver}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </td>
+      <td><button className="icon-button" aria-label={`View incident for ${order.id}`} onClick={() => navigate('incidents', impact.incidentIds[0])}><ArrowUpRight size={18}/></button></td>
+    </tr>;
   })}</tbody></table></div>;
 }
 
@@ -41,6 +89,15 @@ export function Overview(props: ViewProps) {
     <div className="metrics">{metrics.map(metric => <button key={metric.label} className="metric" onClick={() => navigate(metric.label === 'Recovery progress' ? 'history' : 'incidents')}><div className="metric-top"><span>{metric.label}</span><span className={`metric-icon ${metric.tone}`}><metric.icon size={18}/></span></div><strong className="metric-value">{metric.value}</strong><span className="metric-note">{metric.sub}</span></button>)}</div>
     <div className="overview-grid"><Panel title="Orders at risk" eyebrow="PRIORITY QUEUE" action={<LinkButton onClick={() => navigate('incidents')}>View recovery</LinkButton>}><RiskTable data={data} navigate={navigate}/></Panel><Panel title="Incident watch" eyebrow="CORRELATED SIGNALS" action={<span className="count-pill">{active.length}</span>}>{active.length ? <div className="incident-list">{active.slice(0, 4).map(incident => <IncidentRow key={incident.id} incident={incident} onClick={() => navigate('incidents', incident.id)}/>)}</div> : <Empty title="No active disruptions" detail="Scenario A covers shared supplier exposure. Scenario B covers quality and document evidence."/>}<div className="panel-foot"><span className="status-dot"/>Evidence is preserved across correlated alerts</div></Panel></div>
     <div className="overview-bottom"><Panel title="Recent activity" action={<LinkButton onClick={() => navigate('history')}>Full timeline</LinkButton>}>{state.decisions.length ? <div className="compact-timeline">{state.decisions.slice(-4).reverse().map(decision => <div key={decision.id}><span className="timeline-point"/><div><strong>{decision.action.replaceAll('_', ' ')}</strong><p>{decision.detail}</p><small>{formatTime(decision.at)} UTC · {decision.entityId}</small></div></div>)}</div> : <Empty title="A clean decision trail" detail="Ingestion, review, and simulated execution are recorded here."/>}</Panel><Panel title="Team notifications" action={<Bell size={18} className="muted"/>}>{state.notifications.length ? <div className="notifications">{state.notifications.slice(-4).reverse().map(notification => <div key={notification.id}><span className="notification-dot"/><div><p>{notification.message}</p><small>{formatTime(notification.at)} UTC</small></div>{notification.incidentId ? <button className="icon-button" aria-label="Open notification incident" onClick={() => navigate('incidents', notification.incidentId)}><ChevronRight size={16}/></button> : null}</div>)}</div> : <Empty title="You're up to date" detail="Updates for your organization will appear here."/>}</Panel></div>
+    <div className="overview-agent-feed-container" style={{ marginTop: '20px' }}>
+      <Panel
+        title="Autonomous Agent Activity"
+        eyebrow="MULTI-AGENT AUDIT FEED"
+        action={<LinkButton onClick={() => navigate('history')}>Full audit log</LinkButton>}
+      >
+        <AiActivityFeed limit={4} />
+      </Panel>
+    </div>
   </>;
 }
 
@@ -52,14 +109,102 @@ function PlanCard({ plan, props }: { plan: RecoveryPlan; props: ViewProps }) {
   const own = plan.createdBy === data.actor.id || (plan.lastModifiedBy !== undefined && plan.lastModifiedBy === data.actor.id);
   const roleAllowsApproval = data.actor.orgId === 'focal' && (plan.type === 'alternative_supplier' ? ['procurement', 'admin'].includes(data.actor.role) : ['manager', 'admin'].includes(data.actor.role));
   const canPropose = ['analyst', 'manager', 'procurement', 'admin'].includes(data.actor.role) && data.actor.orgId === 'focal';
-  return <article className={`plan-card ${plan.feasible ? '' : 'infeasible'}`}><div className="plan-card-top"><span className="plan-icon"><Icon size={20}/></span><div><h3>{planNames[plan.type]}</h3><span>{plan.orderId} · v{plan.version}</span></div><Badge value={plan.status}/></div>
-    <div className="plan-values"><div><span>Recover</span><strong>{number(plan.quantity)} <small>units</small></strong></div><div><span>Incremental cost</span><strong>{money(plan.costCents)}</strong></div></div>
-    <dl className="plan-detail"><div><dt>Source</dt><dd>{source}</dd></div><div><dt>Arrival · UTC</dt><dd>{formatTime(plan.arrivesAt)}</dd></div></dl>
-    <div className={`feasibility ${plan.feasible ? 'pass' : 'fail'}`}>{plan.feasible ? <ShieldCheck size={16}/> : <TriangleAlert size={16}/>}<strong>{plan.feasible ? 'Passes current constraints' : 'Constraint check failed'}</strong></div>
-    {plan.reasons.length ? <ul className="constraint-reasons">{plan.reasons.map((reason, i) => <li key={i}>{reason}</li>)}</ul> : null}<p className="plan-rationale">{plan.rationale}</p>
-    <details className="plan-evidence"><summary>Evidence & proposal trace</summary><p>Proposed by {proposer}. Inventory version {plan.inventoryVersion}.</p><p>{plan.evidenceIds.length ? plan.evidenceIds.join(' · ') : 'No linked evidence IDs'}</p><code>{plan.id}</code></details>
-    {plan.status === 'proposed' ? <><div className="plan-actions">{roleAllowsApproval && !own && plan.feasible ? <button className="button primary small" disabled={pending} onClick={() => open({ type: 'plan', plan, action: 'approve' })}><Check size={14}/>Review & confirm</button> : null}{canPropose ? <button className="button secondary small" disabled={pending} onClick={() => open({ type: 'plan', plan, action: 'modify' })}>Modify</button> : null}{roleAllowsApproval || canPropose ? <button className="text-button danger-text" disabled={pending} onClick={() => open({ type: 'plan', plan, action: 'reject' })}>Reject</button> : null}</div>{own ? <p className="permission-note">You proposed this plan. A different authorized reviewer must approve it.</p> : !roleAllowsApproval ? <p className="permission-note">Approval requires {plan.type === 'alternative_supplier' ? 'Procurement Approver' : 'Supply Chain Manager'} access.</p> : null}</> : null}
-  </article>;
+  const isAdmin = data.actor.orgId === 'focal' && data.actor.role === 'admin';
+  const isHighRisk = plan.riskLevel === 'high';
+  const validApprovals = (plan.approvals || []).filter(a => a.version === plan.version);
+  const alreadyApprovedByMe = validApprovals.some(a => a.approverId === data.actor.id);
+  const firstApprover = validApprovals[0] ? data.users.find(u => u.id === validApprovals[0].approverId)?.name || validApprovals[0].approverId : undefined;
+
+  return (
+    <article className={`plan-card ${plan.feasible ? '' : 'infeasible'}`}>
+      <div className="plan-card-top">
+        <span className="plan-icon"><Icon size={20}/></span>
+        <div>
+          <h3>{planNames[plan.type]}</h3>
+          <span>{plan.orderId} · v{plan.version}</span>
+        </div>
+        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+          <Badge value={plan.riskLevel || 'routine'} label={`${plan.riskLevel || 'routine'} risk`} />
+          <Badge value={plan.status} />
+        </div>
+      </div>
+      <div className="plan-values">
+        <div><span>Recover</span><strong>{number(plan.quantity)} <small>units</small></strong></div>
+        <div><span>Incremental cost</span><strong>{money(plan.costCents)}</strong></div>
+      </div>
+      <dl className="plan-detail">
+        <div><dt>Source</dt><dd>{source}</dd></div>
+        <div><dt>Arrival · UTC</dt><dd>{formatTime(plan.arrivesAt)}</dd></div>
+      </dl>
+      <div className={`feasibility ${plan.feasible ? 'pass' : 'fail'}`}>
+        {plan.feasible ? <ShieldCheck size={16}/> : <TriangleAlert size={16}/>}
+        <strong>{plan.feasible ? 'Passes current constraints' : 'Constraint check failed'}</strong>
+      </div>
+      {plan.reasons.length ? <ul className="constraint-reasons">{plan.reasons.map((reason, i) => <li key={i}>{reason}</li>)}</ul> : null}
+      <p className="plan-rationale">{plan.rationale}</p>
+      <details className="plan-evidence">
+        <summary>Evidence & proposal trace</summary>
+        <p>Proposed by {proposer}. Inventory version {plan.inventoryVersion}.</p>
+        {validApprovals.length ? (
+          <p>Approvals: {validApprovals.map(a => `${data.users.find(u => u.id === a.approverId)?.name || a.approverId} (${a.role})`).join(' · ')}</p>
+        ) : null}
+        {plan.breakGlass ? (
+          <p style={{ color: '#b91c1c' }}>Break-glass executed by {data.users.find(u => u.id === plan.breakGlass?.actorId)?.name || plan.breakGlass.actorId}: {plan.breakGlass.reason} (Review: {plan.breakGlass.reviewStatus})</p>
+        ) : null}
+        <p>{plan.evidenceIds.length ? plan.evidenceIds.join(' · ') : 'No linked evidence IDs'}</p>
+        <code>{plan.id}</code>
+      </details>
+      {plan.status === 'proposed' || plan.status === 'awaiting_second_approval' ? (
+        <>
+          <div className="plan-actions">
+            {!isHighRisk ? (
+              roleAllowsApproval && plan.feasible ? (
+                <button className="button primary small" disabled={pending} onClick={() => open({ type: 'plan', plan, action: 'approve' })}>
+                  <Check size={14}/>Confirm routine execution
+                </button>
+              ) : null
+            ) : plan.status === 'proposed' ? (
+              roleAllowsApproval && !own && plan.feasible ? (
+                <button className="button primary small" disabled={pending} onClick={() => open({ type: 'plan', plan, action: 'approve' })}>
+                  <Check size={14}/>Record 1st approval
+                </button>
+              ) : null
+            ) : (
+              roleAllowsApproval && !own && !alreadyApprovedByMe && plan.feasible ? (
+                <button className="button primary small" disabled={pending} onClick={() => open({ type: 'plan', plan, action: 'approve' })}>
+                  <Check size={14}/>Confirm 2nd approval & execute
+                </button>
+              ) : null
+            )}
+            {isAdmin && plan.feasible ? (
+              <button className="button secondary small danger-text" disabled={pending} onClick={() => open({ type: 'plan', plan, action: 'break_glass' })}>
+                <ShieldAlert size={14}/>Break-glass
+              </button>
+            ) : null}
+            {canPropose ? (
+              <button className="button secondary small" disabled={pending} onClick={() => open({ type: 'plan', plan, action: 'modify' })}>
+                Modify
+              </button>
+            ) : null}
+            {roleAllowsApproval || canPropose ? (
+              <button className="text-button danger-text" disabled={pending} onClick={() => open({ type: 'plan', plan, action: 'reject' })}>
+                Reject
+              </button>
+            ) : null}
+          </div>
+          {isHighRisk && own ? (
+            <p className="permission-note">You proposed or modified this high-risk plan. Two independent authorized reviewers must approve it.</p>
+          ) : isHighRisk && alreadyApprovedByMe ? (
+            <p className="permission-note">You recorded the first approval. A distinct authorized reviewer must provide the second approval.</p>
+          ) : isHighRisk && plan.status === 'awaiting_second_approval' ? (
+            <p className="permission-note">1 of 2 approvals recorded (by {firstApprover}). Second approval will execute the recovery.</p>
+          ) : !roleAllowsApproval ? (
+            <p className="permission-note">Approval requires {plan.type === 'alternative_supplier' ? 'Procurement Approver' : 'Supply Chain Manager'} access.</p>
+          ) : null}
+        </>
+      ) : null}
+    </article>
+  );
 }
 
 export function Incidents(props: ViewProps & { selectedId?: string }) {

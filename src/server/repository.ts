@@ -2,21 +2,46 @@ import { PGlite } from '@electric-sql/pglite';
 import postgres from 'postgres';
 import { drizzle as drizzlePg } from 'drizzle-orm/postgres-js';
 import { drizzle as drizzleLite } from 'drizzle-orm/pglite';
-import { eq, sql, gt, and, notInArray } from 'drizzle-orm';
+import { eq, sql, gt, and, notInArray, desc } from 'drizzle-orm';
 import { readFile } from 'node:fs/promises';
 import { mkdirSync } from 'node:fs';
 import * as schema from './schema';
-import type { Actor, State } from '../shared/types';
-import { createSeedState } from '../domain/seed';
+import type { Actor, State, AgentType, AgentFeature, AgentExecutionLog } from '../shared/types';
+import { agentBus } from './agents/bus';
+import { createEmptyState, createSeedState } from '../domain/seed';
+import { normalizeState } from '../domain/normalize';
+import { integrationForEvent } from '../domain/events';
 import { demoActors, hashPassword, tokenHash, verifyPassword } from './auth';
+import {
+  DocumentStorage,
+  PostgresDocumentStorage,
+  extractPages,
+  chunkPages,
+  parseDocumentFields,
+} from './documents';
+
+function safeParseJsonArray(val: unknown): string[] {
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
 
 type Database = ReturnType<typeof drizzleLite>;
 export class Repository {
   readonly mode: string;
+  readonly documentStorage: DocumentStorage;
   private db: Database;
   private closeConnection: () => Promise<unknown>;
   private migration: () => Promise<unknown>;
   private pending: Promise<unknown> = Promise.resolve();
+  private agentExecutionLogs: AgentExecutionLog[] = [];
   constructor(options: { url?: string; pglitePath?: string } = {}) {
     if (options.url) {
       const client = postgres(options.url, { max: 5, idle_timeout: 20, connect_timeout: 10 });
@@ -31,13 +56,14 @@ export class Repository {
       this.closeConnection = () => client.close();
       this.migration = async () => client.exec(await readFile(new URL('./migration.sql', import.meta.url), 'utf8'));
     }
+    this.documentStorage = new PostgresDocumentStorage(this.db);
   }
   async init(seed = true): Promise<void> {
     await this.migration();
     if (seed) {
       const existing = await this.db.select().from(schema.workspaces).where(eq(schema.workspaces.id,'focal'));
       if (!existing.length) {
-        const state = createSeedState();
+        const state = normalizeState(createEmptyState());
         await this.db.transaction(async tx => {
           await tx.insert(schema.workspaces).values({ id:'focal', state, version:state.version }).onConflictDoNothing();
           await this.projections(tx, state);
@@ -57,7 +83,11 @@ export class Repository {
   async read(): Promise<State> {
     const [row] = await this.db.select().from(schema.workspaces).where(eq(schema.workspaces.id,'focal'));
     if (!row) throw new Error('Workspace is not initialized. Run db:seed.');
-    return structuredClone(row.state);
+    const state = normalizeState(structuredClone(row.state));
+    for (const conn of state.integrations || []) {
+      conn.backlogCount = (state.queue || []).filter(e => integrationForEvent(e.type) === conn.kind).length;
+    }
+    return state;
   }
   async mutate<T>(fn: (state: State) => T): Promise<T> {
     // The in-process queue also protects PGlite's single connection. FOR UPDATE
@@ -66,7 +96,7 @@ export class Repository {
       await tx.execute(sql`SET LOCAL statement_timeout = '10s'`);
       const [row] = await tx.select().from(schema.workspaces).where(eq(schema.workspaces.id,'focal')).for('update');
       if (!row) throw new Error('Workspace is not initialized.');
-      const state = structuredClone(row.state);
+      const state = normalizeState(structuredClone(row.state));
       const result = fn(state);
       if (result instanceof Promise) throw new Error('Network/async work cannot run inside a state transaction.');
       state.version = Math.max(state.version, row.version) + 1;
@@ -119,7 +149,299 @@ export class Repository {
       const line={id:`${o.id}-line`,orderId:o.id,itemId:o.itemId,quantity:o.quantity,fulfilled:o.fulfilled};
       await tx.insert(schema.orderLines).values(line).onConflictDoUpdate({target:schema.orderLines.id,set:line});
     }
+    for (const conn of state.integrations || []) {
+      const fields = {
+        id: conn.id,
+        workspaceId: 'focal',
+        kind: conn.kind,
+        name: conn.name,
+        status: conn.status,
+        reason: conn.reason || null,
+        failureCount: conn.failureCount || 0,
+        circuitOpenUntil: conn.circuitOpenUntil ? new Date(conn.circuitOpenUntil) : null,
+        lastSuccessAt: conn.lastSuccessAt ? new Date(conn.lastSuccessAt) : null,
+        updatedAt: new Date(conn.updatedAt || state.clock),
+        data: conn,
+      };
+      await tx.insert(schema.integrationConnections).values(fields).onConflictDoUpdate({
+        target: schema.integrationConnections.id,
+        set: fields,
+      });
+    }
   }
+  async recordInbox(item: {
+    integrationId: string;
+    sourceEventId: string;
+    payload: unknown;
+    eventTime: Date;
+    schemaVersion?: number;
+    sourceSequence?: number;
+    correlationId?: string;
+  }) {
+    const id = `inbox-${crypto.randomUUID()}`;
+    await this.db.insert(schema.integrationInbox).values({
+      id,
+      workspaceId: 'focal',
+      integrationId: item.integrationId,
+      sourceEventId: item.sourceEventId,
+      schemaVersion: item.schemaVersion || 1,
+      sourceSequence: item.sourceSequence || null,
+      correlationId: item.correlationId || null,
+      payload: item.payload as any,
+      eventTime: item.eventTime,
+      status: 'pending',
+      attemptCount: 0,
+      nextAttemptAt: new Date(),
+      replayLineage: [],
+    });
+    return id;
+  }
+  async insertDocumentRecord(doc: {
+    id: string;
+    filename: string;
+    fileSizeBytes: number;
+    mimeType: string;
+    source: string;
+    status: string;
+  }): Promise<void> {
+    await this.db.insert(schema.documentRecords).values({
+      id: doc.id,
+      workspaceId: 'focal',
+      filename: doc.filename,
+      fileSizeBytes: doc.fileSizeBytes,
+      mimeType: doc.mimeType,
+      source: doc.source,
+      status: doc.status,
+      confidence: '0.000',
+      issues: [],
+      extractedFields: {},
+      createdAt: new Date(),
+    }).onConflictDoNothing();
+  }
+
+  async createDocumentJob(id: string, documentId: string): Promise<void> {
+    await this.db.insert(schema.documentJobs).values({
+      id,
+      documentId,
+      workspaceId: 'focal',
+      status: 'queued',
+      attemptCount: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }).onConflictDoNothing();
+  }
+
+  async getDocument(id: string) {
+    const [row] = await this.db.select().from(schema.documentRecords).where(eq(schema.documentRecords.id, id));
+    return row || null;
+  }
+
+  async getDocumentChunks(documentId: string, options: { cursor?: number; limit?: number } = {}) {
+    const cursor = options.cursor ?? 0;
+    const limit = Math.min(options.limit ?? 10, 50);
+    const chunks = await this.db
+      .select()
+      .from(schema.documentChunks)
+      .where(and(eq(schema.documentChunks.documentId, documentId), sql`${schema.documentChunks.chunkIndex} >= ${cursor}`))
+      .orderBy(schema.documentChunks.chunkIndex)
+      .limit(limit + 1);
+    const hasMore = chunks.length > limit;
+    const items = hasMore ? chunks.slice(0, limit) : chunks;
+    const nextCursor = hasMore ? items[items.length - 1]!.chunkIndex + 1 : null;
+    const [{ count }] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.documentChunks)
+      .where(eq(schema.documentChunks.documentId, documentId));
+    return { items, nextCursor, hasMore, total: count ?? 0 };
+  }
+
+  async processDocument(documentId: string, jobId: string): Promise<void> {
+    await this.db.update(schema.documentJobs).set({
+      status: 'processing',
+      updatedAt: new Date(),
+    }).where(eq(schema.documentJobs.id, jobId));
+
+    const [docRecord] = await this.db.select().from(schema.documentRecords).where(eq(schema.documentRecords.id, documentId));
+    if (!docRecord) {
+      await this.db.update(schema.documentJobs).set({ status: 'failed', error: 'Document record not found', updatedAt: new Date() }).where(eq(schema.documentJobs.id, jobId));
+      return;
+    }
+
+    try {
+      const data = await this.documentStorage.loadFile(documentId);
+      if (!data) throw new Error('File content not found in storage');
+
+      const { pages, source } = await extractPages(docRecord.filename, data);
+      const chunks = chunkPages(pages);
+      const fullText = pages.map(p => p.text).join('\n');
+      const { fields, issues, confidence, excerpt } = parseDocumentFields(fullText);
+
+      const state = await this.read();
+      const shipment = state.shipments.find(s => s.id === fields.shipmentId);
+      if (fields.shipmentId && !shipment) issues.push('Shipment reference does not match an operational record');
+      if (shipment && fields.quantity !== undefined && shipment.quantity !== fields.quantity) {
+        issues.push(`Quantity mismatch: document ${fields.quantity}, shipment ${shipment.quantity}; raw claim does not override trusted stock`);
+      }
+      const uncertain = !fullText.trim() || !fields.shipmentId || fields.quantity === undefined || !fields.date || !shipment;
+      const status = uncertain ? 'review' : issues.length ? 'mismatch' : 'matched';
+
+      if (chunks.length > 0) {
+        await this.db.insert(schema.documentChunks).values(
+          chunks.map(c => ({
+            id: `${documentId}-chunk-${c.chunkIndex}`,
+            documentId,
+            chunkIndex: c.chunkIndex,
+            pageNumber: c.pageNumber,
+            charStart: c.charStart,
+            charEnd: c.charEnd,
+            content: c.content,
+          }))
+        ).onConflictDoNothing();
+      }
+
+      await this.db.update(schema.documentRecords).set({
+        status,
+        confidence: confidence.toFixed(3),
+        issues,
+        extractedFields: fields,
+        excerpt,
+        pageCount: pages.length,
+        processedAt: new Date(),
+      }).where(eq(schema.documentRecords.id, documentId));
+
+      await this.db.update(schema.documentJobs).set({
+        status: 'completed',
+        updatedAt: new Date(),
+      }).where(eq(schema.documentJobs.id, jobId));
+
+      await this.mutate(s => {
+        let claim = s.documents.find(d => d.id === documentId);
+        if (!claim) {
+          claim = {
+            id: documentId,
+            filename: docRecord.filename,
+            fileSizeBytes: docRecord.fileSizeBytes,
+            pageCount: pages.length,
+            excerpt,
+            fields,
+            confidence,
+            status,
+            issues,
+            source,
+            uploadedAt: s.clock,
+            processedAt: s.clock,
+          };
+          s.documents.push(claim);
+        } else {
+          claim.pageCount = pages.length;
+          claim.excerpt = excerpt;
+          claim.fields = fields;
+          claim.confidence = confidence;
+          claim.status = status;
+          claim.issues = issues;
+          claim.source = source;
+          claim.processedAt = s.clock;
+        }
+        if (status !== 'matched') {
+          s.notifications.push({
+            id: `notif-${crypto.randomUUID()}`,
+            at: s.clock,
+            message: `${claim.filename}: document ${claim.status} requires review`,
+            read: false,
+            orgId: 'focal',
+          });
+        }
+      });
+
+      const s = await this.read();
+      agentBus.publish('document:extracted', {
+        documentId,
+        chunks: chunks.map(c => ({
+          documentId,
+          chunkIndex: c.chunkIndex,
+          pageNumber: c.pageNumber,
+          charStart: c.charStart,
+          charEnd: c.charEnd,
+          content: c.content,
+        })),
+        state: s,
+      });
+    } catch (err: any) {
+      const errorMsg = err?.message || 'Document processing failed';
+      await this.db.update(schema.documentRecords).set({
+        status: 'failed',
+        error: errorMsg,
+        processedAt: new Date(),
+      }).where(eq(schema.documentRecords.id, documentId));
+      await this.db.update(schema.documentJobs).set({
+        status: 'failed',
+        error: errorMsg,
+        updatedAt: new Date(),
+      }).where(eq(schema.documentJobs.id, jobId));
+      await this.mutate(s => {
+        const claim = s.documents.find(d => d.id === documentId);
+        if (claim) {
+          claim.status = 'failed';
+          claim.error = errorMsg;
+        }
+      });
+    }
+  }
+
+  async saveAgentLog(log: AgentExecutionLog): Promise<void> {
+    this.agentExecutionLogs.push(structuredClone(log));
+    try {
+      await this.db.insert(schema.agentExecutionLogs).values({
+        id: log.id,
+        timestamp: log.timestamp,
+        agent: log.agent,
+        feature: log.feature,
+        action: log.action,
+        accessedEntities: JSON.stringify(log.accessedEntities || []),
+        actorId: log.actorId || null,
+        summary: log.summary,
+        status: log.status,
+        latencyMs: log.latencyMs,
+        model: log.model,
+      }).onConflictDoNothing();
+    } catch {
+      // In-memory fallback if database table is unavailable
+    }
+  }
+
+  async getAgentLogs(filter?: { feature?: AgentFeature; limit?: number }): Promise<AgentExecutionLog[]> {
+    const limit = filter?.limit || 50;
+    try {
+      const baseQuery = filter?.feature
+        ? this.db.select().from(schema.agentExecutionLogs).where(eq(schema.agentExecutionLogs.feature, filter.feature))
+        : this.db.select().from(schema.agentExecutionLogs);
+      const rows = await baseQuery
+        .orderBy(desc(schema.agentExecutionLogs.timestamp))
+        .limit(limit);
+
+      return rows.map(r => ({
+        id: r.id,
+        timestamp: r.timestamp,
+        agent: r.agent as AgentType,
+        feature: r.feature as AgentFeature,
+        action: r.action,
+        accessedEntities: safeParseJsonArray(r.accessedEntities),
+        actorId: r.actorId || undefined,
+        summary: r.summary,
+        status: r.status as 'success' | 'fallback' | 'error',
+        latencyMs: r.latencyMs,
+        model: r.model,
+      }));
+    } catch {
+      let logs = [...this.agentExecutionLogs];
+      if (filter?.feature) {
+        logs = logs.filter(l => l.feature === filter.feature);
+      }
+      logs.sort((a, b) => (b.timestamp > a.timestamp ? 1 : b.timestamp < a.timestamp ? -1 : 0));
+      return logs.slice(0, limit);
+    }
+  }
+
   async users(): Promise<Actor[]> {
     const rows=await this.db.select().from(schema.users);
     return rows.map(({passwordHash:_,...actor}) => actor as Actor);

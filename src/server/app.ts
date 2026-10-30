@@ -1,15 +1,21 @@
+import { createHash } from 'node:crypto';
 import { Hono } from 'hono';
 import { getCookie,setCookie,deleteCookie } from 'hono/cookie';
 import { bodyLimit } from 'hono/body-limit';
 import { z } from 'zod';
-import type { Actor,State,DashboardResponse } from '../shared/types';
+import type { Actor,State,DashboardResponse,AgentFeature } from '../shared/types';
 import type { Repository } from './repository';
 import { newToken } from './auth';
-import { createSeedState } from '../domain/seed';
+import { createEmptyState, createSeedState } from '../domain/seed';
 import { DomainError,getImpact,generatePlans,ingestEvent,decidePlan,runScenario,replayQueue,inspectDocument,resolveDocument,setLotDisposition,setTaskStatus } from '../domain/engine';
 import { eventSchema, importRows } from './imports';
-import { extractDocument } from './documents';
-import { aiConfigured,summarizeIncident } from './ai';
+import { DOCUMENT_MAX_BYTES, extractDocument } from './documents';
+import { aiConfigured, aiEnabled, summarizeIncident } from './ai';
+import { agentBus } from './agents/bus';
+import { runTriageAgent } from './agents/triage';
+import { runRecoveryAdvisorAgent } from './agents/recovery';
+import { runDocumentReconcilerAgent } from './agents/document';
+import { handleCopilotChat } from './agents/copilot';
 
 type Env={Variables:{actor:Actor}};
 const focal=(actor:Actor)=>{if(actor.orgId!=='focal') throw new DomainError('Your organization has read-only incident access.',403);};
@@ -19,7 +25,7 @@ function redact(state:State,actor:Actor):State {
   const visible=state.incidents.filter(i=>i.memberOrgIds.includes(actor.orgId)); const ids=new Set(visible.map(i=>i.id));
   const supplierIds=new Set(state.suppliers.filter(s=>s.orgId===actor.orgId).map(s=>s.id));
   return {...state,suppliers:state.suppliers.filter(s=>supplierIds.has(s.id)),dependencies:[],warehouses:[],lots:[],
-    shipments:state.shipments.filter(s=>supplierIds.has(s.supplierId)),orders:[],events:[],plans:[],decisions:[],documents:[],readings:[],queue:[],aiReports:[],
+    shipments:state.shipments.filter(s=>supplierIds.has(s.supplierId)),orders:[],events:[],plans:[],decisions:[],documents:[],integrations:[],queue:[],aiReports:[],
     incidents:visible.map(i=>({...i,affectedOrderIds:[],description:'Shared incident: coordinate the tasks assigned to your organization.'})),
     tasks:state.tasks.filter(t=>ids.has(t.incidentId)&&t.orgId===actor.orgId),
     notifications:state.notifications.filter(n=>n.orgId===actor.orgId),
@@ -28,7 +34,23 @@ function redact(state:State,actor:Actor):State {
 export function createApp(repo:Repository) {
   const app=new Hono<Env>();
   const failures=new Map<string,{attempts:number;until:number}>();
-  app.use('/api/*',bodyLimit({maxSize:8*1024*1024,onError:c=>c.json({error:'Request exceeds 8 MB.'},413)}));
+
+  // Wire Agent Event Listeners
+  agentBus.clear();
+  agentBus.subscribe('disruption:ingested', data => runTriageAgent({ ...data, repo }));
+  agentBus.subscribe('plans:generated', data => runRecoveryAdvisorAgent({ ...data, repo }));
+  agentBus.subscribe('document:extracted', data => runDocumentReconcilerAgent({ ...data, repo }));
+  app.use('/api/documents', bodyLimit({
+    maxSize: DOCUMENT_MAX_BYTES,
+    onError: c => c.json({ error: 'Request exceeds 25 MB document limit.' }, 413),
+  }));
+  app.use('/api/*', (c, next) => {
+    if (c.req.path === '/api/documents') return next();
+    return bodyLimit({
+      maxSize: 8 * 1024 * 1024,
+      onError: c => c.json({ error: 'Request exceeds 8 MB.' }, 413),
+    })(c, next);
+  });
   app.use('/api/*',async(c,next)=>{
     c.header('X-Content-Type-Options','nosniff'); c.header('Cache-Control','no-store');
     const origin=c.req.header('origin');
@@ -80,30 +102,43 @@ export function createApp(repo:Repository) {
   app.get('/api/me',c=>c.json({actor:c.get('actor')}));
   app.get('/api/dashboard',async c=>{
     const actor=c.get('actor'); const [raw,users]=await Promise.all([repo.read(),repo.users()]);const state=redact(raw,actor);
+    state.documents = state.documents.map(({ text: _, ...d }) => ({ ...d, excerpt: d.excerpt || (_ ? _.slice(0, 500) : undefined) }));
     return c.json({state,impacts:actor.orgId==='focal'?getImpact(raw):[],actor,users:users.filter(u=>u.orgId===actor.orgId),aiConfigured:actor.orgId==='focal'&&aiConfigured(),database:repo.mode} satisfies DashboardResponse);
   });
-  app.post('/api/scenarios',async c=>{
-    const actor=c.get('actor');permit(actor,['analyst','manager','admin']);
-    const {scenario}=z.object({scenario:z.enum(['A','B'])}).parse(await c.req.json());
-    await repo.mutate(s=>runScenario(s,scenario,actor));return c.json({ok:true});
-  });
-  app.post('/api/events',async c=>{
-    const actor=c.get('actor');permit(actor,['analyst','manager','warehouse','admin']);
-    const event=eventSchema.parse(await c.req.json());return c.json(await repo.mutate(s=>ingestEvent(s,event,actor)));
+  app.post('/api/events', async c => {
+    const actor = c.get('actor');
+    permit(actor, ['analyst', 'manager', 'warehouse', 'admin']);
+    const input = eventSchema.parse(await c.req.json());
+    const rawEvent = await repo.mutate(s => ingestEvent(s, input, actor));
+    if (rawEvent.status === 'accepted') {
+      const disruptionTypes = ['supplier_delay', 'warehouse_outage', 'shipment_eta', 'stock_count'];
+      if (disruptionTypes.includes(rawEvent.type)) {
+        const state = await repo.read();
+        const incident =
+          state.incidents.find(i => i.entityId === rawEvent.entityId && i.status !== 'resolved') ||
+          state.incidents.find(i => i.entityId === rawEvent.entityId);
+        agentBus.publish('disruption:ingested', { event: rawEvent, incident, state });
+      }
+    }
+    return c.json(rawEvent);
   });
   app.post('/api/import',async c=>{
     const actor=c.get('actor');permit(actor,['analyst','manager','admin']);
     const input=z.object({format:z.enum(['csv','json']),entity:z.enum(['suppliers','warehouses','lots','shipments','orders','events']),content:z.string().max(2*1024*1024)}).parse(await c.req.json());
     return c.json(await repo.mutate(s=>importRows(s,actor,input.entity,input.format,input.content)));
   });
-  app.post('/api/plans/generate',async c=>{
-    const actor=c.get('actor');permit(actor,['analyst','manager','procurement','admin']);
-    const {incidentId}=z.object({incidentId:z.string().min(1)}).parse(await c.req.json());
-    return c.json({plans:await repo.mutate(s=>generatePlans(s,incidentId,actor))});
+  app.post('/api/plans/generate', async c => {
+    const actor = c.get('actor');
+    permit(actor, ['analyst', 'manager', 'procurement', 'admin']);
+    const { incidentId } = z.object({ incidentId: z.string().min(1) }).parse(await c.req.json());
+    const plans = await repo.mutate(s => generatePlans(s, incidentId, actor));
+    const state = await repo.read();
+    agentBus.publish('plans:generated', { incidentId, plans, state });
+    return c.json({ plans });
   });
   app.post('/api/plans/:id',async c=>{
     const actor=c.get('actor');focal(actor);
-    const action=z.object({action:z.enum(['approve','reject','modify']),confirmed:z.boolean().optional(),quantity:z.number().int().positive().optional()}).parse(await c.req.json());
+    const action=z.object({action:z.enum(['approve','reject','modify']),confirmed:z.boolean().optional(),quantity:z.number().int().positive().optional(),breakGlass:z.boolean().optional(),breakGlassReason:z.string().optional()}).parse(await c.req.json());
     const result=await repo.mutate(s=>{
       try{return {plan:decidePlan(s,c.req.param('id'),action,actor)};}
       catch(error){
@@ -117,33 +152,222 @@ export function createApp(repo:Repository) {
   });
   app.post('/api/outage',async c=>{
     const actor=c.get('actor');permit(actor,['manager','admin']);
-    const {enabled}=z.object({enabled:z.boolean()}).parse(await c.req.json());
-    await repo.mutate(s=>{s.integrationOutage=enabled;s.decisions.push({id:crypto.randomUUID(),at:s.clock,actorId:actor.id,action:enabled?'integration_paused':'integration_restored',entityId:'integration',detail:enabled?'Incoming events are durably queued.':'Integration restored; replay requires review.',evidenceIds:[],ruleVersion:'continuity-v1'});});return c.json({ok:true});
+    const {enabled,integrationId}=z.object({enabled:z.boolean(),integrationId:z.string().optional()}).parse(await c.req.json());
+    await repo.mutate(s=>{
+      const targetId = integrationId || 'integration-carrier';
+      const conn = (s.integrations || []).find(x => x.id === targetId || x.kind === targetId);
+      if (conn) {
+        conn.status = enabled ? 'offline' : 'online';
+        conn.updatedAt = s.clock;
+        if (enabled) conn.failureCount = (conn.failureCount || 0) + 1;
+      }
+      s.integrationOutage = enabled;
+      s.decisions.push({
+        id: crypto.randomUUID(),
+        at: s.clock,
+        actorId: actor.id,
+        action: enabled ? 'integration_paused' : 'integration_restored',
+        entityId: targetId,
+        detail: enabled ? `Incoming events for ${conn?.name || targetId} are durably queued.` : `Integration ${conn?.name || targetId} restored; replay requires review.`,
+        evidenceIds: [],
+        ruleVersion: 'continuity-v1',
+      });
+    });
+    return c.json({ok:true});
   });
-  app.post('/api/replay',async c=>{const actor=c.get('actor');permit(actor,['manager','admin']);await repo.mutate(s=>replayQueue(s,actor));return c.json({ok:true});});
+  app.post('/api/replay',async c=>{
+    const actor=c.get('actor');permit(actor,['manager','admin']);
+    const body=await c.req.json().catch(()=>({}));
+    const {integrationId,preview}=z.object({integrationId:z.string().optional(),preview:z.boolean().optional()}).parse(body);
+    if(preview) {
+      const state=await repo.read();
+      return c.json(replayQueue(state,actor,{integrationId,preview:true}));
+    }
+    const result=await repo.mutate(s=>replayQueue(s,actor,{integrationId}));
+    return c.json(result);
+  });
+  app.post('/api/integrations/:id/health',async c=>{
+    const actor=c.get('actor');permit(actor,['manager','admin']);
+    const id=c.req.param('id');
+    const {status,reason}=z.object({status:z.enum(['online','degraded','offline','recovering']),reason:z.string().optional()}).parse(await c.req.json());
+    await repo.mutate(s=>{
+      const conn=(s.integrations||[]).find(x=>x.id===id||x.kind===id);
+      if(!conn) throw new DomainError(`Integration ${id} not found`,404);
+      conn.status=status; conn.reason=reason; conn.updatedAt=s.clock;
+      if(status==='offline') conn.failureCount=(conn.failureCount||0)+1;
+      if(conn.kind==='carrier') s.integrationOutage=status==='offline';
+      s.decisions.push({
+        id: crypto.randomUUID(),
+        at: s.clock,
+        actorId: actor.id,
+        action: `integration_health_${status}`,
+        entityId: conn.id,
+        detail: `${conn.name} status updated to ${status}${reason?`: ${reason}`:''}`,
+        evidenceIds: [],
+        ruleVersion: 'continuity-v1',
+      });
+    });
+    return c.json({ok:true});
+  });
+  app.post('/api/integrations/:id/replay',async c=>{
+    const actor=c.get('actor');permit(actor,['manager','admin']);
+    const id=c.req.param('id');
+    const body=await c.req.json().catch(()=>({}));
+    const {preview}=z.object({preview:z.boolean().optional()}).parse(body);
+    if(preview) {
+      const state=await repo.read();
+      return c.json(replayQueue(state,actor,{integrationId:id,preview:true}));
+    }
+    const result=await repo.mutate(s=>replayQueue(s,actor,{integrationId:id}));
+    return c.json(result);
+  });
   app.post('/api/documents',async c=>{
     const actor=c.get('actor');permit(actor,['analyst','manager','warehouse','procurement','admin']);
-    let document:{filename:string;text:string;source:string};
+    let filename: string;
+    let bytes: Uint8Array;
+    let mimeType: string;
+    let source: string;
+
     if(c.req.header('content-type')?.includes('multipart/form-data')) {
       const form=await c.req.formData(); const file=form.get('file');
       if(!(file instanceof File)) throw new DomainError('Choose a document file.',400);
-      try{document=await extractDocument(file);}catch(e){throw new DomainError(e instanceof Error?e.message:'Document extraction failed.',400);}
+      if(file.size > DOCUMENT_MAX_BYTES) throw new DomainError('Documents must be smaller than 25 MB.', 413);
+      filename = file.name;
+      bytes = new Uint8Array(await file.arrayBuffer());
+      mimeType = file.type || 'application/octet-stream';
+      source = 'Uploaded freight document';
     } else {
-      const parsed=z.object({filename:z.string().min(1).max(200),text:z.string().max(1_000_000)}).parse(await c.req.json());document={...parsed,source:'Provided text'};
+      const parsed=z.object({filename:z.string().min(1).max(200),text:z.string().max(26_214_400)}).parse(await c.req.json());
+      filename = parsed.filename;
+      bytes = new TextEncoder().encode(parsed.text);
+      mimeType = 'text/plain';
+      source = 'Provided text';
     }
-    return c.json(await repo.mutate(s=>{const claim=inspectDocument(s,document.filename,document.text,actor);claim.source=document.source;return claim;}));
+
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    const docId = `doc-${crypto.randomUUID()}`;
+    const jobId = `job-${crypto.randomUUID()}`;
+
+    await repo.insertDocumentRecord({
+      id: docId,
+      filename,
+      fileSizeBytes: bytes.byteLength,
+      mimeType,
+      source,
+      status: 'processing',
+    });
+    await repo.documentStorage.saveFile(docId, bytes, sha256);
+    await repo.createDocumentJob(jobId, docId);
+
+    await repo.mutate(s => {
+      s.documents.push({
+        id: docId,
+        filename,
+        fileSizeBytes: bytes.byteLength,
+        status: 'processing',
+        confidence: 0,
+        issues: [],
+        fields: {},
+        source,
+        uploadedAt: s.clock,
+      });
+      s.decisions.push({
+        id: crypto.randomUUID(),
+        at: s.clock,
+        actorId: actor.id,
+        action: 'document_uploaded',
+        entityId: docId,
+        detail: `Uploaded freight document ${filename} (${bytes.byteLength} bytes) for asynchronous ingestion.`,
+        evidenceIds: [docId],
+        ruleVersion: 'doc-pipeline-v1',
+      });
+    });
+
+    const sync = c.req.query('sync') === 'true' || c.req.header('x-sync') === 'true';
+    if (sync) {
+      await repo.processDocument(docId, jobId);
+    } else {
+      void repo.processDocument(docId, jobId);
+    }
+
+    c.status(202);
+    return c.json({
+      id: docId,
+      jobId,
+      filename,
+      status: 'processing',
+      message: 'Document accepted for asynchronous processing.',
+    });
   });
-  app.post('/api/documents/:id/confirm',async c=>{const actor=c.get('actor');permit(actor,['manager','warehouse','procurement','admin']);return c.json(await repo.mutate(s=>resolveDocument(s,c.req.param('id'),actor)));});
+  app.get('/api/documents/:id',async c=>{
+    const actor=c.get('actor');permit(actor,['analyst','manager','warehouse','procurement','admin']);
+    const doc = await repo.getDocument(c.req.param('id'));
+    if (!doc) {
+      const s = await repo.read();
+      const claim = s.documents.find(d => d.id === c.req.param('id'));
+      if (!claim) throw new DomainError('Document not found.', 404);
+      return c.json(claim);
+    }
+    return c.json(doc);
+  });
+  app.get('/api/documents/:id/chunks',async c=>{
+    const actor=c.get('actor');permit(actor,['analyst','manager','warehouse','procurement','admin']);
+    const cursor = c.req.query('cursor') ? Number(c.req.query('cursor')) : undefined;
+    const limit = c.req.query('limit') ? Number(c.req.query('limit')) : undefined;
+    return c.json(await repo.getDocumentChunks(c.req.param('id'), { cursor, limit }));
+  });
+  app.post('/api/documents/:id/confirm', async c => {
+    const actor = c.get('actor');
+    permit(actor, ['manager', 'warehouse', 'procurement', 'admin']);
+    const docId = c.req.param('id');
+    const result = await repo.mutate(s => resolveDocument(s, docId, actor));
+    const chunksRes = await repo.getDocumentChunks(docId, { limit: 50 });
+    const state = await repo.read();
+    agentBus.publish('document:extracted', {
+      documentId: docId,
+      chunks: chunksRes.items,
+      state,
+    });
+    return c.json(result);
+  });
+  app.get('/api/agent-logs', async c => {
+    const actor = c.get('actor');
+    focal(actor);
+    const feature = c.req.query('feature') as AgentFeature | undefined;
+    const limit = c.req.query('limit') ? Number(c.req.query('limit')) : undefined;
+    return c.json(await repo.getAgentLogs({ feature, limit }));
+  });
   app.post('/api/lots/:id/disposition',async c=>{
     const actor=c.get('actor');permit(actor,['warehouse','admin']);
-    const {status}=z.object({status:z.enum(['available','quarantined'])}).parse(await c.req.json());
-    await repo.mutate(s=>setLotDisposition(s,c.req.param('id'),status,actor));return c.json({ok:true});
+    const {status}=z.object({status:z.enum(['available','held','quarantined'])}).transform(x=>({status:x.status==='quarantined'?'held':x.status})).parse(await c.req.json());
+    await repo.mutate(s=>setLotDisposition(s,c.req.param('id'),status as 'available'|'held',actor));return c.json({ok:true});
   });
   app.post('/api/tasks/:id',async c=>{
     const {status}=z.object({status:z.enum(['open','done'])}).parse(await c.req.json());
     await repo.mutate(s=>setTaskStatus(s,c.req.param('id'),status,c.get('actor')));return c.json({ok:true});
   });
+  app.post('/api/ai/chat', async c => {
+    const actor = c.get('actor');
+    const input = z.object({
+      message: z.string().min(1).max(10000),
+      history: z.array(z.object({
+        id: z.string(),
+        role: z.enum(['user', 'assistant', 'system']),
+        content: z.string(),
+        timestamp: z.string(),
+        actionCards: z.array(z.any()).optional(),
+        simulationResult: z.any().optional(),
+      })).optional(),
+      currentContext: z.object({
+        page: z.string().optional(),
+        entityId: z.string().optional(),
+      }).optional(),
+    }).parse(await c.req.json());
+    const reply = await handleCopilotChat(actor, input, repo);
+    return c.json(reply);
+  });
   app.post('/api/ai/:id',async c=>{
+    if(!aiEnabled()) throw new DomainError('AI features are disabled.',404);
     const actor=c.get('actor');focal(actor);const state=await repo.read();
     let report;try{report=await summarizeIncident(state,c.req.param('id'));}catch(e){throw new DomainError(e instanceof Error?e.message:'AI provider unavailable.',502);}
     const generated=await repo.mutate(s=>{
@@ -155,9 +379,11 @@ export function createApp(repo:Repository) {
     const actor=c.get('actor');permit(actor,['admin']);if(process.env.DEMO_MODE!=='true')throw new DomainError('Reset is available only in demo mode.',403);
     await repo.mutate(s=>{
       const priorDecisions = s.decisions;
+      const priorIntegrations = s.integrations;
       const priorVersion = s.version;
       const priorClock = s.clock;
-      Object.assign(s, createSeedState());
+      Object.assign(s, createEmptyState(new Date(priorClock)));
+      s.integrations = priorIntegrations;
       s.version = priorVersion;
       s.decisions = [
         ...priorDecisions,
