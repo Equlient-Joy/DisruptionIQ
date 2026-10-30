@@ -1,0 +1,18 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: disruptioniq
+      POSTGRES_USER: disruptioniq
+      POSTGRES_PASSWORD: local-demo-password
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - disruptioniq-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U disruptioniq -d disruptioniq"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+volumes:
+  disruptioniq-postgres:

@@ -1,0 +1,5 @@
+[test]
+pathIgnorePatterns = [
+  "**/e2e/**",
+  "tests/e2e/**"
+]
