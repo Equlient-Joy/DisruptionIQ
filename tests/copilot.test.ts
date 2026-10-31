@@ -3,19 +3,17 @@ import { Repository } from '../src/server/repository';
 import { createApp } from '../src/server/app';
 import { simulateWhatIfScenario } from '../src/server/agents/simulation';
 import { formatDeepLinks, handleCopilotChat, runGetIncidentDossierTool, runQueryEntitiesTool } from '../src/server/agents/copilot';
-import { buildRichSeedState, buildScenarioAState } from './fixtures/demo-scenarios';
-import type { Actor, ChatMessage, SimulationDiff } from '../src/shared/types';
+import { buildRichSeedState } from './fixtures/demo-scenarios';
+import type { Actor, ChatMessage } from '../src/shared/types';
 
 process.env.DEMO_MODE = 'true';
+process.env.AI_FEATURES_ENABLED = 'false';
 
 describe('Copilot and What-If Simulation Engine', () => {
   let repo: Repository;
   let app: ReturnType<typeof createApp>;
   let managerCookie = '';
   let partnerCookie = '';
-  let analystCookie = '';
-  let warehouseCookie = '';
-  let procurementCookie = '';
 
   const managerActor: Actor = {
     id: 'manager-1',
@@ -33,13 +31,6 @@ describe('Copilot and What-If Simulation Engine', () => {
     orgId: 'partner',
   };
 
-  const analystActor: Actor = {
-    id: 'analyst-1',
-    name: 'Alex Rivera',
-    email: 'analyst@disruptioniq.demo',
-    role: 'analyst',
-    orgId: 'focal',
-  };
 
   beforeAll(async () => {
     repo = new Repository();
@@ -66,7 +57,7 @@ describe('Copilot and What-If Simulation Engine', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ email: 'analyst@disruptioniq.demo', password: 'disruption-demo' }),
     });
-    analystCookie = loginAnalyst.headers.get('set-cookie')!.split(';')[0]!;
+    expect(loginAnalyst.status).toBe(200);
   }, 30000);
 
   afterAll(async () => {

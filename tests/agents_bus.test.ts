@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { Repository } from '../src/server/repository';
 import { createApp } from '../src/server/app';
-import { AgentEventBus, agentBus, type DocumentChunk } from '../src/server/agents/bus';
+import { AgentEventBus, type DocumentChunk } from '../src/server/agents/bus';
 import { runTriageAgent } from '../src/server/agents/triage';
 import { runRecoveryAdvisorAgent } from '../src/server/agents/recovery';
 import { runDocumentReconcilerAgent } from '../src/server/agents/document';
@@ -9,6 +9,7 @@ import { buildScenarioAState } from './fixtures/demo-scenarios';
 import type { EventInput, RawEvent, RecoveryPlan } from '../src/shared/types';
 
 process.env.DEMO_MODE = 'true';
+process.env.AI_FEATURES_ENABLED = 'false';
 
 describe('AgentEventBus and Autonomous Agents', () => {
   let repo: Repository;
@@ -319,6 +320,26 @@ describe('AgentEventBus and Autonomous Agents', () => {
   });
 
   describe('End-to-End API event bus triggers', () => {
+    test('creating another app cannot send this workspace agent logs to another repository', async () => {
+      const other = new Repository();
+      await other.init();
+      createApp(other);
+      const before = (await repo.getAgentLogs({ feature: 'incidents' })).length;
+      try {
+        const state = await repo.read();
+        const res = await app.request('/api/events', {
+          method: 'POST', headers: { 'content-type': 'application/json', cookie: analystCookie },
+          body: JSON.stringify({ id: 'app-isolation', source: 'operator', type: 'supplier_delay', entityId: state.suppliers[0]!.id, time: new Date(Date.parse(state.clock) + 3600000).toISOString(), payload: { delayHours: 3 } }),
+        });
+        expect(res.status).toBe(200);
+        await repo.agentBus.waitForIdle();
+        expect((await repo.getAgentLogs({ feature: 'incidents' })).length).toBe(before + 1);
+        expect(await other.getAgentLogs()).toHaveLength(0);
+      } finally {
+        await other.close();
+        createApp(repo);
+      }
+    }, 30000);
     test('/api/events disruption event publishes to agentBus and triggers triage agent log', async () => {
       const state = await repo.read();
       const supplier = state.suppliers[0]!;
@@ -344,7 +365,7 @@ describe('AgentEventBus and Autonomous Agents', () => {
       expect(res.status).toBe(200);
 
       // Wait for agentBus in-flight asynchronous handlers to complete
-      await agentBus.waitForIdle();
+      await repo.agentBus.waitForIdle();
 
       const logs = await repo.getAgentLogs({ feature: 'incidents' });
       const matchingLog = logs.find(l => l.accessedEntities.includes(supplier.id));
@@ -369,7 +390,7 @@ describe('AgentEventBus and Autonomous Agents', () => {
       expect(res.status).toBe(200);
 
       // Wait for agentBus in-flight asynchronous handlers to complete
-      await agentBus.waitForIdle();
+      await repo.agentBus.waitForIdle();
 
       const logs = await repo.getAgentLogs({ feature: 'plans' });
       const matchingLog = logs.find(l => l.accessedEntities.includes(incident.id));
@@ -414,7 +435,7 @@ describe('AgentEventBus and Autonomous Agents', () => {
       expect(res.status).toBe(200);
 
       // Wait for agentBus in-flight asynchronous handlers to complete
-      await agentBus.waitForIdle();
+      await repo.agentBus.waitForIdle();
 
       const logs = await repo.getAgentLogs({ feature: 'documents' });
       const matchingLog = logs.find(l => l.accessedEntities.includes(docId));

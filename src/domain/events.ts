@@ -1,8 +1,11 @@
 import type { Actor, EventInput, Lot, RawEvent, State } from '../shared/types';
-import { audit, incident, integer, nextId, requireFocal, sourceEvidence, upstreamPaths, validTime } from './common';
-import { receivedQuantity, shipmentAccounting } from './impact';
+import { audit, DomainError, incident, integer, requireFocal, sourceEvidence, upstreamPaths, validTime } from './common';
+import { shipmentAccounting } from './impact';
+import { simulationEventBoundaryError } from './simulation-dataset';
+import { commitmentSchema } from './catalog';
+import { upstreamSupplierIds } from './supply-status';
 
-const types = new Set(['supplier_delay', 'shipment_eta', 'stock_count', 'warehouse_outage', 'shipment_status']);
+const types = new Set(['supplier_delay', 'supplier_commitment', 'shipment_eta', 'stock_count', 'warehouse_outage', 'shipment_status']);
 const statuses = new Set(['scheduled', 'in_transit', 'delayed', 'delivered']);
 const meanings = new Set(['on_hand', 'dispatched', 'collected', 'received']);
 function canonical(value: unknown): string {
@@ -15,18 +18,29 @@ const ordersForLot = (state: State, entityId: string) => {
   const lot = state.lots.find(l => l.id === entityId); return lot ? state.orders.filter(o => o.itemId === lot.itemId && o.warehouseId === lot.warehouseId).map(o => o.id) : [];
 };
 function sameScope(a: EventInput, b: EventInput): boolean {
-  return a.type === b.type && a.entityId === b.entityId && (a.type !== 'stock_count' || physicalMeaning(a) === physicalMeaning(b));
+  return a.type === b.type && a.entityId === b.entityId && (a.type !== 'stock_count' || physicalMeaning(a) === physicalMeaning(b)) && (a.type !== 'supplier_commitment' || a.payload.itemId === b.payload.itemId);
 }
 export function integrationForEvent(eventType: string): 'carrier' | 'warehouse' | 'supplier' | 'document' | 'ai' {
   if (eventType === 'shipment_eta' || eventType === 'shipment_status') return 'carrier';
   if (eventType === 'stock_count' || eventType === 'warehouse_outage') return 'warehouse';
-  if (eventType === 'supplier_delay') return 'supplier';
+  if (eventType === 'supplier_delay' || eventType === 'supplier_commitment') return 'supplier';
   return 'carrier';
 }
 
 function validation(state: State, input: EventInput): string | undefined {
+  const boundary = simulationEventBoundaryError(state, input);
+  if (boundary) return boundary;
   if (!input || typeof input.id !== 'string' || !input.id.trim() || input.id.length > 200 || typeof input.source !== 'string' || !input.source.trim() || input.source.length > 200) return 'Event ID and source are required';
   if (!types.has(input.type) || !validTime(input.time) || typeof input.entityId !== 'string' || !input.payload || typeof input.payload !== 'object' || Array.isArray(input.payload)) return 'Invalid event type, timestamp, entity or payload';
+  if (input.type === 'supplier_commitment') {
+    const supplier = state.suppliers.find(x => x.id === input.entityId);
+    if (!supplier) return 'Supplier commitment references an unknown supplier';
+    const parsed = commitmentSchema.safeParse({ ...input.payload, updatedAt: input.time });
+    if (!parsed.success) return 'Supplier commitment needs valid item, quantities, due time and status';
+    if (!supplier.components.includes(parsed.data.itemId)) return 'Committed item is not supplied by this supplier';
+    const previous = supplier.commitments?.find(x => x.itemId === parsed.data.itemId);
+    if (previous && Date.parse(input.time) < Date.parse(previous.updatedAt)) return 'Commitment update predates recorded source evidence';
+  }
   const payload = input.payload;
   if (input.type === 'supplier_delay') {
     if (!state.suppliers.some(s => s.id === input.entityId)) return 'Broken supplier reference; downstream exposure cannot be established';
@@ -92,9 +106,12 @@ export function ingestEvent(state: State, input: EventInput, actor: Actor): RawE
       const seedTime = input.type === 'shipment_eta' ? Math.max(-Infinity, ...state.shipments.find(s => s.id === input.entityId)!.etaHistory.map(r => Date.parse(r.at))) : -Infinity;
       let latestTime = Math.max(seedTime, -Infinity, ...accepted.map(e => Date.parse(e.time)));
       if (input.type === 'stock_count') {
+        // Accepted counts already contribute their source effective time above.
+        // Their audit time is the replay clock, not a later inventory mutation.
         const lotMutations = state.decisions.filter(d =>
-          (d.entityId === input.entityId || d.evidenceIds?.includes(input.entityId)) &&
-          ['plan_executed', 'lot_disposition', 'stock_reconciled', 'stock_disputed', 'shipment_receipt'].includes(d.action)
+          (d.entityId === input.entityId || d.evidenceIds?.includes(input.entityId) ||
+            (d.action === 'shipment_receipt' && (d.after as { lot?: { id?: string } } | undefined)?.lot?.id === input.entityId)) &&
+          ['plan_executed', 'lot_disposition', 'stock_disputed', 'shipment_receipt'].includes(d.action)
         );
         const decisionTime = Math.max(-Infinity, ...lotMutations.map(d => Date.parse(d.at)));
         latestTime = Math.max(latestTime, decisionTime);
@@ -120,7 +137,18 @@ export function ingestEvent(state: State, input: EventInput, actor: Actor): RawE
 }
 function applyAccepted(state: State, input: EventInput, actor: Actor): void {
   const payload = input.payload;
-  if (input.type === 'supplier_delay') {
+  if (input.type === 'supplier_commitment') {
+    const supplier = state.suppliers.find(x => x.id === input.entityId)!;
+    const before = structuredClone(supplier.commitments || []);
+    const commitment = commitmentSchema.parse({ ...payload, updatedAt: input.time });
+    supplier.commitments = [...(supplier.commitments || []).filter(x => x.itemId !== commitment.itemId), commitment];
+    audit(state, actor, 'supplier_commitment_updated', supplier.id, `${commitment.itemId}: ${commitment.confirmedQuantity} of ${commitment.expectedQuantity} units confirmed; ${commitment.status}`, [input.id], before, supplier.commitments);
+    const shipments = state.shipments.filter(x => x.itemId === commitment.itemId && x.status !== 'delivered' && upstreamSupplierIds(state, x.supplierId, commitment.itemId).has(supplier.id));
+    const affected = state.orders.filter(x => x.itemId === commitment.itemId && x.status !== 'fulfilled' && shipments.some(ship => ship.warehouseId === x.warehouseId)).map(x => x.id);
+    if (commitment.status === 'broken' || commitment.confirmedQuantity < commitment.expectedQuantity) incident(state, actor, 'commitment_broken', supplier.id, `${supplier.name} supply commitment broken`, `${commitment.confirmedQuantity} of ${commitment.expectedQuantity} ${commitment.itemId} units confirmed; downstream supplier dependencies are exposed`, affected, input.id);
+    else if (commitment.status === 'delayed') incident(state, actor, 'supplier_delay', supplier.id, `${supplier.name} supply commitment delayed`, `${commitment.itemId} commitment is delayed`, affected, input.id);
+    else if (!supplier.commitments.some(c => c.status === 'broken' || c.confirmedQuantity < c.expectedQuantity)) state.incidents.filter(x => x.entityId === supplier.id && x.type === 'commitment_broken').forEach(x => { x.status = 'resolved'; });
+  } else if (input.type === 'supplier_delay') {
     const supplier = state.suppliers.find(s => s.id === input.entityId)!;
     const shipments = state.shipments.filter(s => s.status !== 'delivered' && upstreamPaths(state, s.supplierId).some(p => p.includes(supplier.id)));
     for (const shipment of shipments) {
@@ -161,7 +189,7 @@ function applyAccepted(state: State, input: EventInput, actor: Actor): void {
       lot.quantity += delta;
       lot.version += 1;
       shipment.status = afterAccounting.receivedQuantity >= shipment.quantity ? 'delivered' : 'in_transit';
-      audit(state, actor, 'shipment_receipt', shipment.id, `${delta} newly received units; cumulative receipt ${cumulative}, partial receipts do not double count`, [input.id], undefined, { lot: structuredClone(lot), cumulative });
+      audit(state, actor, 'shipment_receipt', shipment.id, `${delta} newly received units; cumulative receipt ${cumulative}, partial receipts do not double count`, [input.id, lot.id], undefined, { lot: structuredClone(lot), cumulative });
     } else shipment.status = payload.status as typeof shipment.status;
   }
 }
@@ -176,12 +204,13 @@ export function replayQueue(state: State, actor: Actor, options: ReplayOptions =
   let targetKind: string | undefined;
   if (options.integrationId) {
     const conn = (state.integrations || []).find(c => c.id === options.integrationId || c.kind === options.integrationId);
-    if (conn) targetKind = conn.kind;
+    if (!conn) throw new DomainError(`Integration ${options.integrationId} not found`, 404);
+    targetKind = conn.kind;
   }
 
-  const toReplay = targetKind
+  const toReplay = (targetKind
     ? state.queue.filter(e => integrationForEvent(e.type) === targetKind)
-    : [...state.queue];
+    : [...state.queue]).sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
 
   if (options.preview) {
     const simState = structuredClone(state);
@@ -200,7 +229,7 @@ export function replayQueue(state: State, actor: Actor, options: ReplayOptions =
     state.queue = state.queue.filter(e => integrationForEvent(e.type) !== targetKind);
     const conn = (state.integrations || []).find(c => c.kind === targetKind);
     if (conn) conn.status = 'online';
-    if ((state.integrations || []).every(c => c.status !== 'offline')) state.integrationOutage = false;
+    state.integrationOutage = (state.integrations || []).some(c => c.kind === 'carrier' && c.status === 'offline');
   } else {
     state.queue = [];
     state.integrationOutage = false;

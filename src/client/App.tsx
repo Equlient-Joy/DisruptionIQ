@@ -5,112 +5,56 @@ import {
   AlertTriangle,
   ArrowRight,
   Box,
-  Check,
   CheckCircle2,
-  ChevronRight,
   Clock,
   Database,
-  FileCheck2,
   FileText,
   GitBranch,
-  Layers3,
-  ListChecks,
   Lock,
   LogOut,
   Mail,
-  Play,
+  Menu,
   RefreshCw,
   RotateCcw,
-  ShieldAlert,
-  ShieldCheck,
   Sparkles,
-  Upload,
-  User,
   Users,
   Wifi,
   WifiOff,
   X,
 } from 'lucide-react';
-import type { DashboardResponse, Role, Actor, ActionCard } from '../shared/types';
+import type { DashboardResponse, Actor, ActionCard } from '../shared/types';
 import { roleLabels } from '../shared/types';
 import { request, useCommand, ApiError, type Command } from './api';
 import type { Page, Dialog, ViewProps } from './model';
-import { Badge, Empty, formatTime, Modal, Panel, SectionHeading } from './components/ui';
-import { Overview, Incidents } from './components/operations';
+import { formatTime } from './components/ui';
+import { Incidents, Recovery } from './components/operations';
+import { Overview } from './components/dashboard';
 import { Network, Inventory } from './components/resources';
 import { Evidence, Collaboration, History } from './components/evidence';
 import { WorkflowDialog } from './components/forms';
 import { AiCopilotDrawer } from './components/ai-copilot';
 
-interface DemoUserDef {
-  label: string;
-  role: Role;
-  email: string;
-  name: string;
-  orgId: 'focal' | 'partner';
-  description: string;
-}
-
-const DEMO_ACCOUNTS: DemoUserDef[] = [
-  {
-    label: 'Operations Analyst',
-    role: 'analyst',
-    email: 'analyst@disruptioniq.demo',
-    name: 'Alex Rivera',
-    orgId: 'focal',
-    description: 'Correlate signals, assess order risk & generate recovery options',
-  },
-  {
-    label: 'Supply Chain Manager',
-    role: 'manager',
-    email: 'manager@disruptioniq.demo',
-    name: 'Priya Sharma',
-    orgId: 'focal',
-    description: 'Authorize recovery plans, manage outages & assign collaborative tasks',
-  },
-  {
-    label: 'Warehouse Supervisor',
-    role: 'warehouse',
-    email: 'warehouse@disruptioniq.demo',
-    name: 'Kabir Rao',
-    orgId: 'focal',
-    description: 'Inspect lot quality, manage holds & update receiving',
-  },
-  {
-    label: 'Procurement Approver',
-    role: 'procurement',
-    email: 'procurement@disruptioniq.demo',
-    name: 'Ananya Iyer',
-    orgId: 'focal',
-    description: 'Authorize alternative supplier options & review freight documents',
-  },
-  {
-    label: 'Administrator',
-    role: 'admin',
-    email: 'admin@disruptioniq.demo',
-    name: 'Dev Admin',
-    orgId: 'focal',
-    description: 'Full workspace administration, security & workspace clearing controls',
-  },
-  {
-    label: 'Partner Viewer: Nexus',
-    role: 'viewer',
-    email: 'partner@disruptioniq.demo',
-    name: 'Maya Chen',
-    orgId: 'partner',
-    description: 'External partner portal with scoped incident and task visibility',
-  },
-];
+const roleDescriptions: Record<Actor['role'], string> = {
+  analyst: 'Correlate signals, assess order risk and generate recovery options',
+  manager: 'Authorize recovery plans and manage integrations',
+  warehouse: 'Inspect inventory, manage holds and review freight documents',
+  procurement: 'Authorize alternate suppliers and review freight documents',
+  admin: 'Administer the workspace and review operational decisions',
+  viewer: 'View incidents and tasks shared with your organization',
+};
+const pageTitles: Record<Page, string> = { overview: 'Dashboard', incidents: 'Incidents', recovery: 'Recovery', network: 'Supply Network', inventory: 'Inventory & Transport', evidence: 'Data & Evidence', collaboration: 'Collaboration', history: 'History' };
 
 interface LoginProps {
   onLogin: (email: string, password: string) => Promise<boolean>;
   loading: boolean;
   error?: string;
   defaultPassword?: string;
+  demoEnabled?: boolean;
+  demoUsers?: Actor[];
 }
 
-function LoginPage({ onLogin, loading, error, defaultPassword = 'disruption-demo' }: LoginProps) {
-  const [email, setEmail] = useState('analyst@disruptioniq.demo');
+function LoginPage({ onLogin, loading, error, defaultPassword = '', demoEnabled = false, demoUsers = [] }: LoginProps) {
+  const [email, setEmail] = useState(demoEnabled ? demoUsers[0]?.email || '' : '');
   const [password, setPassword] = useState(defaultPassword);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -174,13 +118,13 @@ function LoginPage({ onLogin, loading, error, defaultPassword = 'disruption-demo
           </button>
         </form>
 
-        <div className="demo-accounts-section">
+        {demoEnabled ? <div className="demo-accounts-section">
           <div className="demo-accounts-heading">
             <Users size={14} />
             <span>Demo Account Switcher (1-click sign-in)</span>
           </div>
           <div className="demo-accounts-grid">
-            {DEMO_ACCOUNTS.map(account => (
+            {demoUsers.map(account => (
               <button
                 key={account.email}
                 type="button"
@@ -193,16 +137,16 @@ function LoginPage({ onLogin, loading, error, defaultPassword = 'disruption-demo
                 }}
               >
                 <div className="demo-account-top">
-                  <span className="demo-account-label">{account.label}</span>
+                  <span className="demo-account-label">{roleLabels[account.role]}</span>
                   <span className={`org-chip ${account.orgId}`}>{account.orgId}</span>
                 </div>
                 <div className="demo-account-user">{account.name}</div>
                 <div className="demo-account-email">{account.email}</div>
-                <div className="demo-account-desc">{account.description}</div>
+                <div className="demo-account-desc">{roleDescriptions[account.role]}</div>
               </button>
             ))}
           </div>
-        </div>
+        </div> : null}
       </div>
     </div>
   );
@@ -212,12 +156,15 @@ export default function App() {
   const queryClient = useQueryClient();
   const [page, setPage] = useState<Page>('overview');
   const [selectedIncidentId, setSelectedIncidentId] = useState<string>();
-  const [copilotOpen, setCopilotOpen] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [selectedEntityId, setSelectedEntityId] = useState<string>();
   const [dialog, setDialog] = useState<Dialog>();
   const [commandSuccess, setCommandSuccess] = useState<string>();
   const [commandError, setCommandError] = useState<string>();
   const [loginError, setLoginError] = useState<string>();
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const {
     data,
@@ -229,13 +176,13 @@ export default function App() {
     queryFn: () => request<DashboardResponse>('/dashboard'),
     retry: false,
     staleTime: 5_000,
+    refetchInterval: query => query.state.data?.state.documents.some(d => d.status === 'processing') ? 1_000 : 10_000,
   });
 
   const { data: demoData } = useQuery<{ users: Actor[]; demoPassword: string } | null>({
     queryKey: ['demo-users'],
     queryFn: () => request<{ users: Actor[]; demoPassword: string }>('/demo-users').catch(() => null),
     retry: false,
-    enabled: !!dashboardError,
   });
 
   const command = useCommand();
@@ -261,6 +208,8 @@ export default function App() {
 
   const navigate = useCallback((targetPage: Page, incidentId?: string) => {
     setPage(targetPage);
+    setSidebarOpen(false);
+    setSelectedEntityId(incidentId);
     if (incidentId) {
       setSelectedIncidentId(incidentId);
     }
@@ -280,7 +229,7 @@ export default function App() {
             open({ type: 'plan', plan, action: 'approve' });
           }
         }
-        navigate('incidents', card.incidentId);
+        navigate('recovery', card.incidentId);
       } else if (card.cardType === 'lot_hold_prompt' && card.lotId) {
         if (card.targetStatus) {
           await execute(
@@ -313,8 +262,14 @@ export default function App() {
       setLoginError(undefined);
       try {
         await request('/login', { email: emailInput, password: passwordInput });
-        await queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-        await refetch();
+        setPage('overview');
+        setSelectedIncidentId(undefined);
+        setCopilotOpen(true);
+        setSelectedEntityId(undefined);
+        setDialog(undefined);
+        setCommandError(undefined);
+        setCommandSuccess(undefined);
+        await queryClient.resetQueries({ queryKey: ['dashboard'] });
         return true;
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Authentication failed';
@@ -328,13 +283,24 @@ export default function App() {
   );
 
   const handleLogout = useCallback(async () => {
+    setIsLoggingOut(true);
     try {
-      await request('/logout', {});
-    } catch {
-      // ignore
-    } finally {
+      await request('/logout', {}).catch(err => {
+        if (!(err instanceof ApiError && err.status === 401)) throw err;
+      });
+      await queryClient.cancelQueries();
       queryClient.clear();
+      setPage('overview');
+      setSelectedIncidentId(undefined);
+      setCopilotOpen(false);
+      setDialog(undefined);
+      setCommandError(undefined);
+      setCommandSuccess(undefined);
       await refetch();
+    } catch (err) {
+      setCommandError(err instanceof Error ? err.message : 'Sign out failed. Please retry.');
+    } finally {
+      setIsLoggingOut(false);
     }
   }, [queryClient, refetch]);
 
@@ -347,28 +313,28 @@ export default function App() {
     );
   }
 
-  const isUnauthorized =
-    (dashboardError instanceof ApiError && dashboardError.status === 401) ||
-    dashboardError?.message?.includes('401') ||
-    dashboardError?.message?.toLowerCase().includes('sign in');
+  const isUnauthorized = dashboardError instanceof ApiError && dashboardError.status === 401;
 
-  if (isUnauthorized || !data) {
+  if (isUnauthorized) {
     return (
       <LoginPage
+        key={demoData ? 'demo' : 'private'}
         onLogin={handleLogin}
         loading={isLoggingIn}
         error={loginError}
-        defaultPassword={demoData?.demoPassword || 'disruption-demo'}
+        defaultPassword={demoData?.demoPassword}
+        demoEnabled={!!demoData}
+        demoUsers={demoData?.users}
       />
     );
   }
 
-  if (dashboardError) {
+  if (dashboardError || !data) {
     return (
       <div className="error-screen">
         <AlertTriangle size={36} className="danger-text" />
         <h2>Unable to load operational dashboard</h2>
-        <p>{dashboardError.message}</p>
+        <p>{dashboardError?.message || 'No dashboard data was returned.'}</p>
         <button className="button primary" onClick={() => refetch()}>
           <RefreshCw size={16} /> Retry
         </button>
@@ -382,7 +348,7 @@ export default function App() {
   const queueCount = state.queue.length;
   const openTasksCount = state.tasks.filter(task => task.status === 'open').length;
 
-  const canReset = actor.orgId === 'focal' && actor.role === 'admin';
+  const canReset = actor.orgId === 'focal' && actor.role === 'admin' && !!demoData;
 
   const viewProps: ViewProps = {
     data,
@@ -390,10 +356,12 @@ export default function App() {
     execute,
     open,
     navigate,
+    selectEntity: setSelectedEntityId,
   };
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell redesigned ${copilotOpen ? 'ai-open' : ''} ${sidebarOpen ? 'navigation-open' : ''}`}>
+      {sidebarOpen ? <button className="navigation-backdrop" aria-label="Close navigation" onClick={() => setSidebarOpen(false)}/> : null}
       {/* Sidebar */}
       <aside className="sidebar">
         <div className="sidebar-brand">
@@ -412,7 +380,7 @@ export default function App() {
             onClick={() => navigate('overview')}
           >
             <Activity size={18} />
-            <span>Overview</span>
+            <span>Dashboard</span>
           </button>
 
           <button
@@ -420,12 +388,13 @@ export default function App() {
             onClick={() => navigate('incidents')}
           >
             <AlertTriangle size={18} />
-            <span>Incidents & Recovery</span>
+            <span>Incidents</span>
             {activeIncidents.length > 0 ? (
               <span className="nav-badge alert">{activeIncidents.length}</span>
             ) : null}
           </button>
 
+          <button className={`nav-item ${page === 'recovery' ? 'active' : ''}`} onClick={() => navigate('recovery')}><RefreshCw size={18}/><span>Recovery</span>{state.plans.filter(plan => plan.feasible && ['proposed', 'awaiting_second_approval'].includes(plan.status)).length ? <span className="nav-badge info">{state.plans.filter(plan => plan.feasible && ['proposed', 'awaiting_second_approval'].includes(plan.status)).length}</span> : null}</button>
           <button
             className={`nav-item ${page === 'network' ? 'active' : ''}`}
             onClick={() => navigate('network')}
@@ -469,7 +438,7 @@ export default function App() {
             onClick={() => navigate('history')}
           >
             <Clock size={18} />
-            <span>Decision History</span>
+            <span>History</span>
           </button>
         </nav>
 
@@ -489,10 +458,11 @@ export default function App() {
         {/* Top Bar */}
         <header className="topbar">
           <div className="topbar-left">
+            <button className="icon-button navigation-toggle" aria-label="Toggle navigation" aria-expanded={sidebarOpen} onClick={() => setSidebarOpen(!sidebarOpen)}><Menu size={20}/></button>
             <div className="topbar-title">
               <span className="topbar-logo-text">DisruptionIQ</span>
               <span className="topbar-divider">/</span>
-              <span className="topbar-subtext">From delivery delays to recovery plans</span>
+              <span className="topbar-subtext">{pageTitles[page]}</span>
             </div>
           </div>
 
@@ -538,11 +508,12 @@ export default function App() {
             <button
               type="button"
               className="button secondary small copilot-trigger-btn"
-              onClick={() => setCopilotOpen(true)}
+              onClick={() => setCopilotOpen(!copilotOpen)}
+              aria-expanded={copilotOpen}
               title="DisruptionIQ AI Copilot"
             >
               <Sparkles size={16} />
-              <span>Ask Copilot</span>
+              <span>{copilotOpen ? 'Hide AI' : 'Ask Copilot'}</span>
             </button>
 
             {canReset ? (
@@ -572,6 +543,7 @@ export default function App() {
             <button
               type="button"
               className="icon-button logout-button"
+              disabled={isLoggingOut || command.isPending}
               onClick={handleLogout}
               title="Sign out of DisruptionIQ"
               aria-label="Sign out"
@@ -616,6 +588,7 @@ export default function App() {
         <main className="content-container">
           {page === 'overview' && <Overview {...viewProps} />}
           {page === 'incidents' && <Incidents {...viewProps} selectedId={selectedIncidentId} />}
+          {page === 'recovery' && <Recovery {...viewProps} selectedId={selectedIncidentId} />}
           {page === 'network' && <Network {...viewProps} />}
           {page === 'inventory' && <Inventory {...viewProps} />}
           {page === 'evidence' && <Evidence {...viewProps} />}
@@ -636,11 +609,12 @@ export default function App() {
 
       {/* DisruptionIQ AI Copilot Drawer */}
       <AiCopilotDrawer
+        key={actor.id}
         isOpen={copilotOpen}
         onClose={() => setCopilotOpen(false)}
         navigate={navigate}
         activePage={page}
-        activeEntityId={selectedIncidentId}
+        activeEntityId={selectedEntityId || (page === 'incidents' || page === 'recovery' ? selectedIncidentId : undefined)}
         actor={actor}
         onTriggerActionCard={handleTriggerActionCard}
       />

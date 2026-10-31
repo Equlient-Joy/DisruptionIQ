@@ -1,3 +1,4 @@
+import type { StoredSimulationDataset, SimulationProgress } from './simulation';
 export type Role = 'analyst' | 'manager' | 'warehouse' | 'procurement' | 'admin' | 'viewer';
 export const roleLabels: Record<Role, string> = {
   analyst: 'Operations Analyst',
@@ -16,6 +17,15 @@ export interface Actor {
   orgId: string;
 }
 
+export interface SupplierCommitment {
+  itemId: string;
+  expectedQuantity: number;
+  confirmedQuantity: number;
+  dueAt: string;
+  status: 'ready' | 'delayed' | 'broken' | 'fulfilled';
+  updatedAt: string;
+}
+
 export interface Supplier {
   id: string;
   name: string;
@@ -28,6 +38,7 @@ export interface Supplier {
   capacity: number;
   unitCostCents: number;
   orgId: string;
+  commitments?: SupplierCommitment[];
 }
 
 export interface Dependency {
@@ -93,7 +104,7 @@ export interface Order {
   status: 'open' | 'recovering' | 'fulfilled';
 }
 
-export type EventType = 'supplier_delay' | 'shipment_eta' | 'stock_count' | 'warehouse_outage' | 'shipment_status';
+export type EventType = 'supplier_delay' | 'supplier_commitment' | 'shipment_eta' | 'stock_count' | 'warehouse_outage' | 'shipment_status';
 
 export interface EventInput {
   id: string;
@@ -201,6 +212,8 @@ export interface RecoveryPlan {
   evidenceIds: string[];
   inventoryVersion: number;
   lastModifiedBy?: string;
+  trustFeasibility?: 'robust' | 'conditional' | 'infeasible';
+  verificationAction?: string;
 }
 
 export interface RecoveryCandidate {
@@ -226,6 +239,8 @@ export interface Decision {
   evidenceIds: string[];
   ruleVersion: string;
   model?: string;
+  previousHash?: string;
+  hash?: string;
 }
 
 export interface Task {
@@ -265,6 +280,28 @@ export interface Notification {
   incidentId?: string;
   read: boolean;
   orgId: string;
+  targetRoles?: Role[];
+}
+
+export interface BaselineComparisonMetric {
+  erpOnly: number | string;
+  lastWriteWins: number | string;
+  disruptionIQ: number | string;
+  unit?: string;
+  note: string;
+}
+
+export interface BaselineComparisonReport {
+  synthetic: true;
+  timestamp: string;
+  metrics: {
+    conflictsCaught: BaselineComparisonMetric;
+    duplicateEventsTrapped: BaselineComparisonMetric;
+    constraintViolations: BaselineComparisonMetric;
+    wrongDecisions: BaselineComparisonMetric;
+    unverifiedStockExposures: BaselineComparisonMetric;
+  };
+  summary: string;
 }
 
 export interface AiReport {
@@ -316,6 +353,9 @@ export interface IntegrationInboxItem {
 }
 
 export interface State {
+  simulationDataset?: StoredSimulationDataset;
+  simulation?: SimulationProgress;
+  workspaceGeneration?: number;
   version: number;
   clock: string;
   suppliers: Supplier[];
@@ -344,6 +384,12 @@ export interface DashboardResponse {
   users: Actor[];
   aiConfigured: boolean;
   database: string;
+}
+
+export interface ImportResult {
+  accepted: number;
+  total: number;
+  errors: { row: number; message: string }[];
 }
 
 export interface PlanAction {
@@ -385,6 +431,16 @@ export interface ActionCard {
   buttonLabel: string;
 }
 
+export interface StrategyComparisonItem {
+  strategy: PlanType;
+  strategyName: string;
+  feasible: boolean;
+  candidateCount: number;
+  bestCostCents?: number;
+  bestArrivesAt?: string;
+  rejectionReasons: string[];
+}
+
 export interface SimulationDiff {
   entityType: 'shipment' | 'supplier' | 'warehouse' | 'lot';
   entityId: string;
@@ -398,6 +454,9 @@ export interface SimulationDiff {
   newlyBreachedOrders: { orderId: string; customer: string; hoursToDeadline: number }[];
   feasibleRecoveryCount: number;
   recommendedPlanType?: string;
+  strategyComparison?: StrategyComparisonItem[];
+  warning?: string;
+  suggestedAlternatives?: string[];
 }
 
 export interface ChatMessage {

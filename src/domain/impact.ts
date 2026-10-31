@@ -1,6 +1,7 @@
 import type { EvidenceConfidence, FactorScoreBreakdown, Impact, RiskBand, Shipment, State } from '../shared/types';
 import { upstreamPaths } from './common';
 import { DeterministicTemplatePlanner, evaluateCandidateConstraints } from './plans';
+import { upstreamShipmentQuota } from './supply-status';
 
 export function shipmentAccounting(state: State, shipment: Shipment): { physicalReceived: number; expedited: number; receivedQuantity: number; availableShipment: number } {
   const deliveryEvents = state.events.filter(e => e.entityId === shipment.id && e.type === 'shipment_status' && e.status === 'accepted' && e.payload.status === 'delivered');
@@ -56,7 +57,8 @@ export function receivedQuantity(state: State, shipment: Shipment): number {
   return shipmentAccounting(state, shipment).receivedQuantity;
 }
 export function availableShipment(state: State, shipment: Shipment): number {
-  return shipmentAccounting(state, shipment).availableShipment;
+  const accounting = shipmentAccounting(state, shipment);
+  return Math.min(accounting.availableShipment, Math.max(0, upstreamShipmentQuota(state, shipment) - accounting.receivedQuantity));
 }
 export function getImpact(state: State): Impact[] {
   const priority = { critical: 3, high: 2, normal: 1 };
@@ -160,7 +162,8 @@ export function getImpact(state: State): Impact[] {
       for (const p of upPaths) {
         for (const ancestor of p) {
           if (ancestor !== shipment.supplierId) {
-            const isShared = state.suppliers.some(s => s.id !== shipment.supplierId && upstreamPaths(state, s.id).some(op => op.includes(ancestor)));
+            const activeCause = state.incidents.some(i => i.entityId === ancestor && i.status !== 'resolved' && ['supplier_delay', 'commitment_broken'].includes(i.type) && i.affectedOrderIds.includes(order.id));
+            const isShared = activeCause && state.suppliers.some(s => s.id !== shipment.supplierId && upstreamPaths(state, s.id).some(op => op.includes(ancestor)));
             if (isShared) {
               hasSharedUpstream = true;
               break;

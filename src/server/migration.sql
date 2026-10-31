@@ -30,6 +30,38 @@ CREATE TABLE IF NOT EXISTS suppliers (
 );
 CREATE INDEX IF NOT EXISTS supplier_workspace_idx ON suppliers(workspace_id);
 
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS tier integer NOT NULL DEFAULT 1;
+UPDATE suppliers SET tier = (data->>'tier')::integer
+WHERE data->>'tier' ~ '^[0-9]+$' AND (data->>'tier')::integer BETWEEN 1 AND 10;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'supplier_tier_range' AND conrelid = 'suppliers'::regclass) THEN
+    ALTER TABLE suppliers ADD CONSTRAINT supplier_tier_range CHECK (tier BETWEEN 1 AND 10);
+  END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS supplier_commitments (
+  id text PRIMARY KEY,
+  workspace_id text NOT NULL REFERENCES workspaces(id),
+  supplier_id text NOT NULL REFERENCES suppliers(id),
+  item_id text NOT NULL,
+  expected_quantity integer NOT NULL,
+  confirmed_quantity integer NOT NULL,
+  due_at timestamptz NOT NULL,
+  status text NOT NULL,
+  updated_at timestamptz NOT NULL,
+  CHECK (expected_quantity > 0 AND confirmed_quantity >= 0 AND confirmed_quantity <= expected_quantity),
+  CHECK (status IN ('ready','delayed','broken','fulfilled')),
+  CHECK (status <> 'fulfilled' OR confirmed_quantity = expected_quantity)
+);
+CREATE INDEX IF NOT EXISTS commitment_workspace_idx ON supplier_commitments(workspace_id);
+CREATE INDEX IF NOT EXISTS commitment_supplier_idx ON supplier_commitments(supplier_id, item_id);
+INSERT INTO supplier_commitments (id, workspace_id, supplier_id, item_id, expected_quantity, confirmed_quantity, due_at, status, updated_at)
+SELECT s.id || ':' || (c->>'itemId'), s.workspace_id, s.id, c->>'itemId',
+  (c->>'expectedQuantity')::integer, (c->>'confirmedQuantity')::integer,
+  (c->>'dueAt')::timestamptz, c->>'status', (c->>'updatedAt')::timestamptz
+FROM suppliers s CROSS JOIN LATERAL jsonb_array_elements(COALESCE(s.data->'commitments', '[]'::jsonb)) c
+ON CONFLICT (id) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS warehouses (
   id text PRIMARY KEY,
   workspace_id text NOT NULL REFERENCES workspaces(id),
@@ -88,8 +120,8 @@ CREATE INDEX IF NOT EXISTS line_order_idx ON order_lines(order_id);
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'inventory_lots') THEN
-    UPDATE inventory_lots SET status = 'held' WHERE status = 'quarantined';
     ALTER TABLE inventory_lots DROP CONSTRAINT IF EXISTS inventory_lots_status_check;
+    UPDATE inventory_lots SET status = 'held' WHERE status = 'quarantined';
     ALTER TABLE inventory_lots ADD CONSTRAINT inventory_lots_status_check CHECK (status IN ('available','held','disputed'));
   END IF;
 

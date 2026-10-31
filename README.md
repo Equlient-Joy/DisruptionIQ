@@ -4,7 +4,7 @@
 [![Bun](https://img.shields.io/badge/Bun-1.3+-black.svg)](https://bun.sh/)
 [![React](https://img.shields.io/badge/React-19.1-cyan.svg)](https://react.dev/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-blue.svg)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/Tests-60%20Pass%20%7C%208%20Suites-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-102%20Pass%20%7C%2015%20Suites-brightgreen.svg)]()
 
 > **DisruptionIQ — Operational Control Room & Decision Support**  
 > Autonomous disruption detection, dependency graph propagation, interaction-aware risk scoring, and decision support for high-consequence supply chains. DisruptionIQ turns carrier delays, warehouse outages, inventory holds, and large freight documents into constraint-validated, human-reviewed recovery plans under risk-tiered governance with an immutable audit trail.
@@ -58,7 +58,8 @@ Conventional ERP systems flood operators with unranked, noisy alerts without sho
   - Modern iconography with [Lucide React](https://lucide.dev/).
   - Zero-dependency custom design system optimized for high-density logistics dashboards with light/dark adaptive tokens.
 - **Test Automation**:
-  - **Bun Test**: 60 comprehensive domain, API, document pipeline, integration resilience, impact scoring, authorization, and persistence tests across 8 test suites.
+  - **Bun Test**: 102 domain, API, document pipeline, integration resilience, impact scoring, authorization, client state, and persistence tests across 15 test files.
+  - **Playwright**: 9 browser workflows covering account access, recovery approvals, import feedback, outages, documents, and workspace clearing.
 
 ---
 
@@ -66,7 +67,7 @@ Conventional ERP systems flood operators with unranked, noisy alerts without sho
 
 ### Prerequisites
 - [Bun](https://bun.sh/) (v1.3.0 or higher).
-- [Docker](https://www.docker.com/) (optional, for running standalone PostgreSQL 17 via `docker-compose.yml`). If Docker is not running, DisruptionIQ automatically defaults to embedded PGlite.
+- [Docker](https://www.docker.com/) (optional, for running standalone PostgreSQL 17 via `docker-compose.yml`). The sample configuration uses embedded PGlite. To use standalone PostgreSQL, remove `DATABASE_MODE=pglite` and set `DATABASE_URL`; connection failures do not silently switch databases.
 
 ### 1. Installation
 Clone the repository and install dependencies:
@@ -80,6 +81,10 @@ Copy the sample environment file:
 cp .env.example .env
 ```
 *Note: Default settings run in `DEMO_MODE=true` with embedded PostgreSQL (`PGlite`), allowing complete out-of-the-box operation without external database configuration.*
+
+The local workspace is persisted under `.data/workspace`. A new workspace contains no operational records. Restarting preserves records that you explicitly imported or ingested. Enterprise datasets and scenario builders live only under `tests/fixtures`; the production app never loads them. Demo sign-in roles remain available, with account details supplied by the server.
+
+AI provider calls are disabled by default. Set `AI_FEATURES_ENABLED=true` and configure a provider key to enable them. With AI disabled, the copilot and background agents use deterministic fallback responses.
 
 ### 3. Build & Initialize Database
 Compile the frontend client and run schema migrations:
@@ -104,12 +109,12 @@ DisruptionIQ enforces backend-verified Role-Based Access Control (RBAC). The log
 
 | Role | Demo Account Email | Name | Permitted Capabilities | Prohibited Actions |
 |---|---|---|---|---|
-| **Operations Analyst** | `analyst@disruptioniq.demo` | Alex Rivera | View disruptions, correlate alerts, ingest signals, generate recovery proposals, modify quantities. | Cannot approve recovery plans. Cannot clear workspace. |
-| **Supply Chain Manager** | `manager@disruptioniq.demo` | Priya Sharma | Authorize routine plans, provide first/second approval on high-risk plans, manage integration outages & replay. | Cannot self-approve high-risk plans they created/modified. |
-| **Warehouse Supervisor** | `warehouse@disruptioniq.demo` | Kabir Rao | Review physical stock discrepancies, manage inventory lot holds (`available` vs `held`), confirm freight documents. | Cannot approve expedites or financial spending. |
-| **Procurement Approver** | `procurement@disruptioniq.demo` | Ananya Iyer | Review and approve Alternative Supplier recovery plans, review freight documents. | Cannot approve warehouse reallocations or self-approve high-risk proposals. |
-| **Administrator** | `admin@disruptioniq.demo` | Dev Admin | Full operational visibility, security oversight, emergency break-glass execution, clear workspace. | Cannot approve high-risk plans they proposed without audited break-glass reason. |
-| **Partner Viewer** | `partner@disruptioniq.demo` | Maya Chen | Scoped view of participating incidents, inspect assigned cross-company collaboration tasks. | Completely redacted: No internal customer orders, inventory lots, plans, or decisions. |
+| **Operations Analyst** | `analyst@disruptioniq.demo` | Operations Analyst | View disruptions, correlate alerts, ingest signals, generate recovery proposals, modify quantities. | Cannot approve recovery plans. Cannot clear workspace. |
+| **Supply Chain Manager** | `manager@disruptioniq.demo` | Supply Chain Manager | Authorize routine plans, provide first/second approval on high-risk plans, manage integration outages & replay. | Cannot self-approve high-risk plans they created/modified. |
+| **Warehouse Supervisor** | `warehouse@disruptioniq.demo` | Warehouse Supervisor | Review physical stock discrepancies, manage inventory lot holds (`available` vs `held`), confirm freight documents. | Cannot approve expedites or financial spending. |
+| **Procurement Approver** | `procurement@disruptioniq.demo` | Procurement Approver | Review and approve Alternative Supplier recovery plans, review freight documents. | Cannot approve warehouse reallocations or self-approve high-risk proposals. |
+| **Administrator** | `admin@disruptioniq.demo` | Administrator | Full operational visibility, security oversight, emergency break-glass execution, clear workspace. | Cannot approve high-risk plans they proposed without audited break-glass reason. |
+| **Partner Viewer** | `partner@disruptioniq.demo` | Partner Viewer | Scoped view of participating incidents, inspect assigned cross-company collaboration tasks. | Completely redacted: No internal customer orders, inventory lots, plans, or decisions. |
 
 > **Universal Demo Password:** `disruption-demo`
 
@@ -196,7 +201,7 @@ The workspace starts as an empty, professional control room. Follow this step-by
 
 Execute the complete test suite:
 ```bash
-# Run all 60 tests across 8 test suites
+# Run all 102 unit and API tests across 15 test files
 bun test
 
 # Run TypeScript strict typecheck
@@ -204,4 +209,19 @@ bun run typecheck
 
 # Run production build
 bun run build
+
+# Run browser workflows with a fresh in-memory database on port 3100
+bun run test:e2e
 ```
+
+## Day-by-day synthetic enterprise feed
+
+Generate an explicit source file without importing data:
+
+```powershell
+bun run generate:enterprise --seed judges-2026 --start-date 2026-11-01 --days 7 --out .cache/enterprise-demo.json
+```
+
+Sign in as Supply Chain Manager or Administrator, open **Data & Evidence**, choose the file under **Enterprise simulation**, and click **Load simulation dataset**. **Start day 1** and **Next day** each deliver one atomic batch. **Pause** blocks further days; **Resume** does not deliver data. Progress and actual recovery actions survive refresh and restart. Login and attachment keep operational records empty until explicit delivery.
+
+See [the presentation runbook](docs/simulation-feed.md) for the day sequence, permissions, frozen UTC clock, duplicate/retry behavior and deliberate demo reset.

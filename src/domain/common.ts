@@ -1,4 +1,5 @@
 import type { Actor, Decision, Incident, State } from '../shared/types';
+import { appendDecision } from './audit';
 
 export class DomainError extends Error {
   status: number;
@@ -18,10 +19,19 @@ export function nextId(state: State, prefix: string): string {
   return `${prefix}-${state.version}-${state.decisions.length + 1}-${state.events.length + 1}`;
 }
 export function audit(state: State, actor: Actor, action: string, entityId: string, detail: string, evidenceIds: string[] = [], before?: unknown, after?: unknown): Decision {
-  const decision: Decision = { id: nextId(state, 'decision'), at: state.clock, actorId: actor.id, action, entityId, detail, evidenceIds: [...new Set(evidenceIds)], ruleVersion: RULE_VERSION };
-  if (before !== undefined) decision.before = structuredClone(before);
-  if (after !== undefined) decision.after = structuredClone(after);
-  state.decisions.push(decision); state.version += 1; return decision;
+  const base: Omit<Decision, 'previousHash' | 'hash'> = {
+    id: nextId(state, 'decision'),
+    at: state.clock,
+    actorId: actor.id,
+    action,
+    entityId,
+    detail,
+    evidenceIds: [...new Set(evidenceIds)],
+    ruleVersion: RULE_VERSION,
+  };
+  if (before !== undefined) base.before = structuredClone(before);
+  if (after !== undefined) base.after = structuredClone(after);
+  return appendDecision(state, base);
 }
 export function incident(state: State, actor: Actor, type: string, entityId: string, title: string, description: string, affectedOrderIds: string[], evidenceId: string): Incident {
   let existing = state.incidents.find(i => i.type === type && i.entityId === entityId && i.status !== 'resolved');
@@ -35,7 +45,7 @@ export function incident(state: State, actor: Actor, type: string, entityId: str
       { id: `${existing.id}-review`, incidentId: existing.id, title: 'Review recovery capacity and approval', ownerId: 'manager-1', orgId: 'focal', status: 'open', dueAt: atHours(state, 6) },
     );
   }
-  state.notifications.push({ id: nextId(state, 'notification'), at: state.clock, message: title, incidentId: existing.id, read: false, orgId: 'focal' });
+  state.notifications.push({ id: nextId(state, 'notification'), at: state.clock, message: title, incidentId: existing.id, read: false, orgId: 'focal', targetRoles: ['analyst', 'manager', 'admin'] });
   audit(state, actor, 'incident_correlated', existing.id, description, [evidenceId]);
   return existing;
 }

@@ -15,8 +15,8 @@ describe('AI Copilot Client Navigation & Deep Link Handling', () => {
     expect(mapEntityToPage('warehouse')).toBe('network');
     expect(mapEntityToPage('suppliers')).toBe('network');
     expect(mapEntityToPage('supplier')).toBe('network');
-    expect(mapEntityToPage('plans')).toBe('incidents');
-    expect(mapEntityToPage('plan')).toBe('incidents');
+    expect(mapEntityToPage('plans')).toBe('recovery');
+    expect(mapEntityToPage('plan')).toBe('recovery');
     expect(mapEntityToPage('tasks')).toBe('collaboration');
     expect(mapEntityToPage('task')).toBe('collaboration');
     expect(mapEntityToPage('events')).toBe('evidence');

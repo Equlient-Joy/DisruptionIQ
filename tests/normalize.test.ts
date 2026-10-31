@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { normalizeState, defaultIntegrations } from '../src/domain/normalize';
-import type { Lot, RecoveryPlan, Decision } from '../src/shared/types';
+import { normalizeState } from '../src/domain/normalize';
 
 describe('state normalization', () => {
   test('fresh empty state normalizes and supplies default integrations', () => {

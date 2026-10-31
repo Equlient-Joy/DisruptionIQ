@@ -37,9 +37,29 @@ export const suppliers = pgTable('suppliers', {
   id: text('id').primaryKey(),
   workspaceId: text('workspace_id').notNull().references(() => workspaces.id),
   name: text('name').notNull(),
+  tier: integer('tier').notNull().default(1),
   data: jsonb('data').notNull(),
 }, t => [
   index('supplier_workspace_idx').on(t.workspaceId),
+  check('supplier_tier_range', sql`${t.tier} BETWEEN 1 AND 10`),
+]);
+
+export const supplierCommitments = pgTable('supplier_commitments', {
+  id: text('id').primaryKey(),
+  workspaceId: text('workspace_id').notNull().references(() => workspaces.id),
+  supplierId: text('supplier_id').notNull().references(() => suppliers.id),
+  itemId: text('item_id').notNull(),
+  expectedQuantity: integer('expected_quantity').notNull(),
+  confirmedQuantity: integer('confirmed_quantity').notNull(),
+  dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
+  status: text('status').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+}, t => [
+  index('commitment_workspace_idx').on(t.workspaceId),
+  index('commitment_supplier_idx').on(t.supplierId, t.itemId),
+  check('commitment_quantity_valid', sql`${t.expectedQuantity} > 0 AND ${t.confirmedQuantity} >= 0 AND ${t.confirmedQuantity} <= ${t.expectedQuantity}`),
+  check('commitment_status_valid', sql`${t.status} IN ('ready','delayed','broken','fulfilled')`),
+  check('commitment_fulfillment_valid', sql`${t.status} <> 'fulfilled' OR ${t.confirmedQuantity} = ${t.expectedQuantity}`),
 ]);
 
 export const warehouses = pgTable('warehouses', {

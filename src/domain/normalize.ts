@@ -1,3 +1,5 @@
+import { normalizeSimulationFields } from './simulation-dataset';
+import { ensureAuditChain } from './audit';
 import type {
   IntegrationConnection,
   Lot,
@@ -146,7 +148,7 @@ export function normalizeState(raw: unknown): State {
     : [];
 
   // Decisions: preserve ALL historical decisions (including condition/quality decisions)
-  const decisions = Array.isArray(s.decisions) ? s.decisions.map(d => ({ ...d })) : [];
+  const decisions = ensureAuditChain(Array.isArray(s.decisions) ? s.decisions.map(d => ({ ...d })) : []);
 
   // Tasks: filter tasks referencing dropped incidents
   const tasks = Array.isArray(s.tasks)
@@ -193,6 +195,7 @@ export function normalizeState(raw: unknown): State {
   const queue = Array.isArray(s.queue) ? s.queue.map(q => ({ ...q })) : [];
 
   const normalized: State = {
+    ...normalizeSimulationFields(s),
     version,
     clock,
     suppliers,
@@ -209,6 +212,7 @@ export function normalizeState(raw: unknown): State {
     documents,
     notifications,
     integrations,
+    integrationOutage: integrations.some(c => c.kind === 'carrier' && c.status === 'offline'),
     aiReports,
     queue,
   };

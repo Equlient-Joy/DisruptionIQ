@@ -6,13 +6,14 @@
   "scripts": {
     "dev": "bun --watch src/server/index.ts",
     "dev:web": "vite --host 127.0.0.1",
-    "build": "vite build",
+    "build": "tsc --noEmit && vite build",
     "start": "bun src/server/index.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "db:migrate": "bun src/server/migrate.ts",
     "db:seed": "bun src/server/seed.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "generate:enterprise": "bun scripts/generate-enterprise-data.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.3.14",

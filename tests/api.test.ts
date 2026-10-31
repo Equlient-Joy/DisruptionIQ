@@ -26,6 +26,20 @@ describe('authenticated incident and recovery API', () => {
     expect((await app.request('/api/dashboard')).status).toBe(401);
     expect((await post('/api/login',{email:'admin@disruptioniq.demo',password:'wrong'},'')).status).toBe(401);
   });
+  test('integration outage state survives reads and only carrier controls its legacy flag', async () => {
+    const before = await repo.read();
+    try {
+      expect((await post('/api/outage', { enabled: true }, manager)).status).toBe(200);
+      expect((await repo.read()).integrationOutage).toBe(true);
+      expect((await post('/api/outage', { enabled: false, integrationId: 'warehouse' }, manager)).status).toBe(200);
+      expect((await repo.read()).integrationOutage).toBe(true);
+      const paused = await repo.read();
+      expect((await post('/api/outage', { enabled: false, integrationId: 'missing' }, manager)).status).toBe(404);
+      expect(await repo.read()).toEqual(paused);
+    } finally {
+      await repo.mutate(s => Object.assign(s, before));
+    }
+  });
   test('analyst cannot reset and untrusted webhook is rejected', async () => {
     expect((await post('/api/reset',{})).status).toBe(403);
     expect((await post('/api/webhooks/carrier',{})).status).toBe(401);

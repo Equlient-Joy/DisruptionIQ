@@ -11,8 +11,16 @@ export async function request<T>(path: string, body?: unknown, headers?: Record<
     ...(body !== undefined ? { method: 'POST', body: form ? body : JSON.stringify(body) } : {}),
     headers: { ...(body !== undefined && !form ? { 'Content-Type': 'application/json' } : {}), ...headers },
   });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new ApiError(result.error || `Request failed (${response.status})`, response.status);
+  let result: unknown;
+  try {
+    result = await response.json();
+  } catch {
+    throw new ApiError(response.ok ? 'The server returned an invalid response. Please retry.' : `Request failed (${response.status})`, response.status);
+  }
+  if (!response.ok) {
+    const error = result && typeof result === 'object' && 'error' in result ? result.error : undefined;
+    throw new ApiError(typeof error === 'string' ? error : `Request failed (${response.status})`, response.status);
+  }
   return result as T;
 }
 

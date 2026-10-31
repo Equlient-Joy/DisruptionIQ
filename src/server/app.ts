@@ -6,33 +6,41 @@ import { z } from 'zod';
 import type { Actor,State,DashboardResponse,AgentFeature } from '../shared/types';
 import type { Repository } from './repository';
 import { newToken } from './auth';
-import { createEmptyState, createSeedState } from '../domain/seed';
-import { DomainError,getImpact,generatePlans,ingestEvent,decidePlan,runScenario,replayQueue,inspectDocument,resolveDocument,setLotDisposition,setTaskStatus } from '../domain/engine';
+import { createEmptyState } from '../domain/seed';
+import { DomainError,getImpact,generatePlans,ingestEvent,decidePlan,replayQueue,resolveDocument,setLotDisposition,setTaskStatus } from '../domain/engine';
 import { eventSchema, importRows } from './imports';
-import { DOCUMENT_MAX_BYTES, extractDocument } from './documents';
+import { DOCUMENT_MAX_BYTES } from './documents';
 import { aiConfigured, aiEnabled, summarizeIncident } from './ai';
-import { agentBus } from './agents/bus';
+import { appendDecision, verifyAuditChain } from '../domain/audit';
+import { computeBaselineComparison } from '../domain/baseline';
 import { runTriageAgent } from './agents/triage';
 import { runRecoveryAdvisorAgent } from './agents/recovery';
 import { runDocumentReconcilerAgent } from './agents/document';
 import { handleCopilotChat } from './agents/copilot';
+import { registerSimulationRoutes } from './simulation';
+import { requireSimulationStarted } from '../domain/simulation';
 
 type Env={Variables:{actor:Actor}};
 const focal=(actor:Actor)=>{if(actor.orgId!=='focal') throw new DomainError('Your organization has read-only incident access.',403);};
 const permit=(actor:Actor,roles:Actor['role'][])=>{focal(actor);if(!roles.includes(actor.role)) throw new DomainError('This role cannot perform that action.',403);};
 function redact(state:State,actor:Actor):State {
-  if(actor.orgId==='focal') return state;
+  const filteredNotifications = state.notifications.filter(n =>
+    n.orgId === actor.orgId &&
+    (!n.targetRoles || n.targetRoles.length === 0 || n.targetRoles.includes(actor.role))
+  );
+  if(actor.orgId==='focal') return { ...state, notifications: filteredNotifications };
   const visible=state.incidents.filter(i=>i.memberOrgIds.includes(actor.orgId)); const ids=new Set(visible.map(i=>i.id));
   const supplierIds=new Set(state.suppliers.filter(s=>s.orgId===actor.orgId).map(s=>s.id));
   return {...state,suppliers:state.suppliers.filter(s=>supplierIds.has(s.id)),dependencies:[],warehouses:[],lots:[],
     shipments:state.shipments.filter(s=>supplierIds.has(s.supplierId)),orders:[],events:[],plans:[],decisions:[],documents:[],integrations:[],queue:[],aiReports:[],
     incidents:visible.map(i=>({...i,affectedOrderIds:[],description:'Shared incident: coordinate the tasks assigned to your organization.'})),
     tasks:state.tasks.filter(t=>ids.has(t.incidentId)&&t.orgId===actor.orgId),
-    notifications:state.notifications.filter(n=>n.orgId===actor.orgId),
+    notifications:filteredNotifications,
   };
 }
 export function createApp(repo:Repository) {
   const app=new Hono<Env>();
+  const agentBus = repo.agentBus;
   const failures=new Map<string,{attempts:number;until:number}>();
 
   // Wire Agent Event Listeners
@@ -91,7 +99,7 @@ export function createApp(repo:Repository) {
     if(c.req.header('x-webhook-secret')!==secret) return c.json({error:'Carrier webhook secret required.'},401);
     const event=eventSchema.parse(await c.req.json());
     const actor:Actor={id:'carrier-webhook',name:'Simulated carrier',email:'carrier@local',role:'analyst',orgId:'focal'};
-    return c.json(await repo.mutate(s=>ingestEvent(s,{...event,source:'simulated-carrier'},actor)));
+    return c.json(await repo.mutate(s=>{requireSimulationStarted(s);return ingestEvent(s,{...event,source:'simulated-carrier'},actor);}));
   });
   app.use('/api/*',async(c,next)=>{
     const token=getCookie(c,'diq_session');const actor=token?await repo.actorForSession(token):null;
@@ -99,19 +107,22 @@ export function createApp(repo:Repository) {
     c.set('actor',actor); await next();
   });
   app.post('/api/logout',async c=>{const token=getCookie(c,'diq_session');if(token)await repo.deleteSession(token);deleteCookie(c,'diq_session',{path:'/'});return c.json({ok:true});});
+  registerSimulationRoutes(app, repo);
   app.get('/api/me',c=>c.json({actor:c.get('actor')}));
   app.get('/api/dashboard',async c=>{
     const actor=c.get('actor'); const [raw,users]=await Promise.all([repo.read(),repo.users()]);const state=redact(raw,actor);
     state.documents = state.documents.map(({ text: _, ...d }) => ({ ...d, excerpt: d.excerpt || (_ ? _.slice(0, 500) : undefined) }));
+    delete state.simulationDataset;
+    if (actor.orgId !== 'focal') delete state.simulation;
     return c.json({state,impacts:actor.orgId==='focal'?getImpact(raw):[],actor,users:users.filter(u=>u.orgId===actor.orgId),aiConfigured:actor.orgId==='focal'&&aiConfigured(),database:repo.mode} satisfies DashboardResponse);
   });
   app.post('/api/events', async c => {
     const actor = c.get('actor');
     permit(actor, ['analyst', 'manager', 'warehouse', 'admin']);
     const input = eventSchema.parse(await c.req.json());
-    const rawEvent = await repo.mutate(s => ingestEvent(s, input, actor));
+    const rawEvent = await repo.mutate(s => { requireSimulationStarted(s); return ingestEvent(s, input, actor); });
     if (rawEvent.status === 'accepted') {
-      const disruptionTypes = ['supplier_delay', 'warehouse_outage', 'shipment_eta', 'stock_count'];
+      const disruptionTypes = ['supplier_delay', 'supplier_commitment', 'warehouse_outage', 'shipment_eta', 'stock_count'];
       if (disruptionTypes.includes(rawEvent.type)) {
         const state = await repo.read();
         const incident =
@@ -124,8 +135,8 @@ export function createApp(repo:Repository) {
   });
   app.post('/api/import',async c=>{
     const actor=c.get('actor');permit(actor,['analyst','manager','admin']);
-    const input=z.object({format:z.enum(['csv','json']),entity:z.enum(['suppliers','warehouses','lots','shipments','orders','events']),content:z.string().max(2*1024*1024)}).parse(await c.req.json());
-    return c.json(await repo.mutate(s=>importRows(s,actor,input.entity,input.format,input.content)));
+    const input=z.object({format:z.enum(['csv','json']),entity:z.enum(['suppliers','dependencies','warehouses','lots','shipments','orders','events']),content:z.string().max(2*1024*1024)}).parse(await c.req.json());
+    return c.json(await repo.mutate(s=>{requireSimulationStarted(s);return importRows(s,actor,input.entity,input.format,input.content);}));
   });
   app.post('/api/plans/generate', async c => {
     const actor = c.get('actor');
@@ -142,27 +153,40 @@ export function createApp(repo:Repository) {
     const result=await repo.mutate(s=>{
       try{return {plan:decidePlan(s,c.req.param('id'),action,actor)};}
       catch(error){
+        if(error instanceof DomainError && error.status===403) {
+          appendDecision(s, {
+            id: `decision-${s.version}-${s.decisions.length + 1}-${s.events.length + 1}`,
+            at: s.clock,
+            actorId: actor.id,
+            action: 'permission_denied',
+            entityId: c.req.param('id'),
+            detail: `Permission denied (403): ${error.message}`,
+            evidenceIds: [c.req.param('id')],
+            ruleVersion: 'rbac-v1',
+          });
+          return {denied:true,error:error.message};
+        }
         // Only a failed constraint revalidation intentionally commits its stale
         // proposal and audit evidence. Other failures roll back the transaction.
         if(error instanceof DomainError && error.status===409 && s.plans.find(p=>p.id===c.req.param('id'))?.status==='stale')return {error:error.message};
         throw error;
       }
     });
+    if('denied' in result) return c.json({error:result.error},403);
     return 'error' in result?c.json({error:result.error},409):c.json(result.plan);
   });
   app.post('/api/outage',async c=>{
     const actor=c.get('actor');permit(actor,['manager','admin']);
     const {enabled,integrationId}=z.object({enabled:z.boolean(),integrationId:z.string().optional()}).parse(await c.req.json());
     await repo.mutate(s=>{
-      const targetId = integrationId || 'integration-carrier';
+      const targetId = integrationId || 'carrier';
       const conn = (s.integrations || []).find(x => x.id === targetId || x.kind === targetId);
-      if (conn) {
-        conn.status = enabled ? 'offline' : 'online';
-        conn.updatedAt = s.clock;
-        if (enabled) conn.failureCount = (conn.failureCount || 0) + 1;
-      }
-      s.integrationOutage = enabled;
-      s.decisions.push({
+      if (!conn) throw new DomainError(`Integration ${targetId} not found`, 404);
+      conn.status = enabled ? 'offline' : 'online';
+      conn.updatedAt = s.clock;
+      if (enabled) conn.failureCount = (conn.failureCount || 0) + 1;
+      if (conn.kind === 'carrier') s.integrationOutage = enabled;
+      appendDecision(s, {
         id: crypto.randomUUID(),
         at: s.clock,
         actorId: actor.id,
@@ -196,7 +220,7 @@ export function createApp(repo:Repository) {
       conn.status=status; conn.reason=reason; conn.updatedAt=s.clock;
       if(status==='offline') conn.failureCount=(conn.failureCount||0)+1;
       if(conn.kind==='carrier') s.integrationOutage=status==='offline';
-      s.decisions.push({
+      appendDecision(s, {
         id: crypto.randomUUID(),
         at: s.clock,
         actorId: actor.id,
@@ -223,6 +247,9 @@ export function createApp(repo:Repository) {
   });
   app.post('/api/documents',async c=>{
     const actor=c.get('actor');permit(actor,['analyst','manager','warehouse','procurement','admin']);
+    const initialState = await repo.read();
+    requireSimulationStarted(initialState);
+    const expectedGeneration = initialState.workspaceGeneration ?? 1;
     let filename: string;
     let bytes: Uint8Array;
     let mimeType: string;
@@ -260,6 +287,8 @@ export function createApp(repo:Repository) {
     await repo.createDocumentJob(jobId, docId);
 
     await repo.mutate(s => {
+      requireSimulationStarted(s);
+      if ((s.workspaceGeneration ?? 1) !== expectedGeneration) throw new DomainError('Workspace was reset during upload. Upload the document again.', 409);
       s.documents.push({
         id: docId,
         filename,
@@ -271,7 +300,7 @@ export function createApp(repo:Repository) {
         source,
         uploadedAt: s.clock,
       });
-      s.decisions.push({
+      appendDecision(s, {
         id: crypto.randomUUID(),
         at: s.clock,
         actorId: actor.id,
@@ -285,9 +314,9 @@ export function createApp(repo:Repository) {
 
     const sync = c.req.query('sync') === 'true' || c.req.header('x-sync') === 'true';
     if (sync) {
-      await repo.processDocument(docId, jobId);
+      await repo.processDocument(docId, jobId, expectedGeneration);
     } else {
-      void repo.processDocument(docId, jobId);
+      void repo.processDocument(docId, jobId, expectedGeneration);
     }
 
     c.status(202);
@@ -372,8 +401,31 @@ export function createApp(repo:Repository) {
     let report;try{report=await summarizeIncident(state,c.req.param('id'));}catch(e){throw new DomainError(e instanceof Error?e.message:'AI provider unavailable.',502);}
     const generated=await repo.mutate(s=>{
       if(!s.incidents.some(i=>i.id===report.incidentId))throw new DomainError('Incident changed while AI was generating. Please retry.',409);
-      s.aiReports.push(report);s.decisions.push({id:crypto.randomUUID(),at:s.clock,actorId:actor.id,action:'ai_summary',entityId:report.incidentId,detail:`${report.status}: ${report.model}; factual input hash ${report.inputHash}`,after:report,evidenceIds:report.evidenceIds,ruleVersion:'ai-grounding-v1',model:report.model});return report;
+      s.aiReports.push(report);
+      appendDecision(s, {
+        id: crypto.randomUUID(),
+        at: s.clock,
+        actorId: actor.id,
+        action: 'ai_summary',
+        entityId: report.incidentId,
+        detail: `${report.status}: ${report.model}; factual input hash ${report.inputHash}`,
+        after: report,
+        evidenceIds: report.evidenceIds,
+        ruleVersion: 'ai-grounding-v1',
+        model: report.model,
+      });
+      return report;
     });return c.json(generated);
+  });
+  app.get('/api/audit/verify', async c => {
+    const actor = c.get('actor'); focal(actor);
+    const state = await repo.read();
+    return c.json(verifyAuditChain(state.decisions));
+  });
+  app.get('/api/baseline-comparison', async c => {
+    const actor = c.get('actor'); focal(actor);
+    const state = await repo.read();
+    return c.json(computeBaselineComparison(state));
   });
   app.post('/api/reset',async c=>{
     const actor=c.get('actor');permit(actor,['admin']);if(process.env.DEMO_MODE!=='true')throw new DomainError('Reset is available only in demo mode.',403);
@@ -382,24 +434,25 @@ export function createApp(repo:Repository) {
       const priorIntegrations = s.integrations;
       const priorVersion = s.version;
       const priorClock = s.clock;
+      const priorSimulation = s.simulation;
+      const generation = (s.workspaceGeneration ?? 1) + 1;
       Object.assign(s, createEmptyState(new Date(priorClock)));
+      s.workspaceGeneration = generation;
       s.integrations = priorIntegrations;
       s.version = priorVersion;
-      s.decisions = [
-        ...priorDecisions,
-        {
-          id: crypto.randomUUID(),
-          at: s.clock,
-          actorId: actor.id,
-          action: 'demo_reset',
-          entityId: 'workspace',
-          detail: `Fictional scenario workspace reset by administrator. Prior version ${priorVersion} at ${priorClock}; ${priorDecisions.length} prior audit records preserved.`,
-          before: { version: priorVersion, clock: priorClock, decisionCount: priorDecisions.length },
-          after: { version: s.version, clock: s.clock },
-          evidenceIds: [],
-          ruleVersion: 'demo-v1',
-        },
-      ];
+      s.decisions = priorDecisions;
+      appendDecision(s, {
+        id: crypto.randomUUID(),
+        at: s.clock,
+        actorId: actor.id,
+        action: 'demo_reset',
+        entityId: 'workspace',
+        detail: `Fictional scenario workspace reset by administrator. Prior version ${priorVersion} at ${priorClock}; ${priorDecisions.length} prior audit records preserved.`,
+        before: { version: priorVersion, clock: priorClock, decisionCount: priorDecisions.length, simulation: priorSimulation },
+        after: { version: s.version, clock: s.clock },
+        evidenceIds: [],
+        ruleVersion: 'demo-v1',
+      });
     });
     return c.json({ok:true});
   });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createSeedState } from '../src/domain/seed';
+import { createSeedState } from './fixtures/enterprise';
 import { ingestEvent, replayQueue } from '../src/domain/events';
 import type { Actor, EventInput } from '../src/shared/types';
 
@@ -7,6 +7,60 @@ const analyst: Actor = { id: 'analyst-1', name: 'Analyst', email: 'a@test', role
 const manager: Actor = { id: 'manager-1', name: 'Manager', email: 'm@test', role: 'manager', orgId: 'focal' };
 
 describe('integration-specific continuity inbox and resilience', () => {
+  test('an older queued physical count cannot erase a later carrier receipt', () => {
+    const state=createSeedState(new Date('2026-11-01T00:00:00Z'));
+    const lot=state.lots[0]!;const shipment=state.shipments[0]!;shipment.lotId=lot.id;
+    state.integrations.find(c=>c.kind==='warehouse')!.status='offline';
+    ingestEvent(state,{id:'count-before-receipt',source:'wms',type:'stock_count',entityId:lot.id,time:'2026-11-01T01:00:00Z',payload:{quantity:40,meaning:'on_hand'}},analyst);
+    ingestEvent(state,{id:'later-receipt',source:'carrier',type:'shipment_status',entityId:shipment.id,time:'2026-11-01T02:00:00Z',payload:{status:'delivered',quantity:120}},analyst);
+    expect(lot.quantity).toBe(160);
+    // Old persisted receipt audits have a lot snapshot but no explicit lot evidence ID.
+    state.decisions.filter(d=>d.action==='shipment_receipt').forEach(d=>{d.evidenceIds=d.evidenceIds.filter(id=>id!==lot.id);});
+    const result=replayQueue(state,manager,{integrationId:'warehouse'});
+    expect(result.events[0]!.status).toBe('stale');expect(lot.quantity).toBe(160);
+  });
+  test('an unknown replay target rejects without consuming any queued events', () => {
+    for (const preview of [false, true]) {
+      const state = createSeedState();
+      state.integrations.find(c => c.kind === 'carrier')!.status = 'offline';
+      ingestEvent(state, { id: 'queued', source: 'carrier', type: 'shipment_eta', entityId: state.shipments[0]!.id, time: state.clock, payload: { eta: state.shipments[0]!.eta } }, analyst);
+      const before = JSON.stringify(state);
+      expect(() => replayQueue(state, manager, { integrationId: 'missing', preview })).toThrow('not found');
+      expect(JSON.stringify(state)).toBe(before);
+    }
+  });
+
+  test('replay reconciles effective times chronologically even when arrivals are reversed', () => {
+    const state = createSeedState();
+    state.integrations.find(c => c.kind === 'carrier')!.status = 'offline';
+    const shipment = state.shipments[0]!;
+    const later = new Date(Date.parse(state.clock) + 3600000).toISOString();
+    for (const [id, time] of [['later', later], ['earlier', state.clock]]) {
+      ingestEvent(state, { id, time, source: 'carrier', type: 'shipment_status', entityId: shipment.id, payload: { status: 'in_transit' } }, analyst);
+    }
+    const result = replayQueue(state, manager, { integrationId: 'carrier' });
+    expect(result.events.map(e => e.id)).toEqual(['earlier', 'later']);
+    expect(result.events.map(e => e.status)).toEqual(['accepted', 'accepted']);
+  });
+
+  test('replayed stock counts use effective times rather than replay audit timestamps', () => {
+    const state = createSeedState(new Date('2026-10-31T10:00:00Z'));
+    const lot = state.lots[0]!;
+    state.integrations.find(c => c.kind === 'warehouse')!.status = 'offline';
+    for (const [id, time, quantity] of [
+      ['new-count', '2026-10-31T09:00:00Z', 90],
+      ['old-count', '2026-10-31T08:00:00Z', 60],
+    ] as const) {
+      ingestEvent(state, { id, time, source: 'warehouse', type: 'stock_count', entityId: lot.id, payload: { quantity, meaning: 'on_hand' } }, analyst);
+    }
+    const preview = replayQueue(state, manager, { integrationId: 'warehouse', preview: true });
+    expect(lot.quantity).toBe(40);
+    const replay = replayQueue(state, manager, { integrationId: 'warehouse' });
+    expect(preview.events.map(e => e.status)).toEqual(['accepted', 'accepted']);
+    expect(replay.events.map(e => e.status)).toEqual(['accepted', 'accepted']);
+    expect(lot.quantity).toBe(90);
+  });
+
   test('one offline integration does not queue unrelated source events', () => {
     const s = createSeedState(new Date('2026-10-30T06:00:00Z'));
     // Set only carrier integration to offline

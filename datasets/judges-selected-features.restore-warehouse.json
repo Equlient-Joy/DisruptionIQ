@@ -1,0 +1,12 @@
+[
+  {
+    "id": "EV-PRESENTER-WEST-RESTORED",
+    "source": "Presenter-confirmed synthetic warehouse restoration",
+    "type": "warehouse_outage",
+    "entityId": "WH-WEST",
+    "time": "2026-11-03T18:00:00.000Z",
+    "payload": {
+      "status": "online"
+    }
+  }
+]

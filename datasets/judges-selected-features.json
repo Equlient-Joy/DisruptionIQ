@@ -1,0 +1,1037 @@
+{
+  "schemaVersion": 1,
+  "datasetId": "aster-judges-six-days-v3",
+  "name": "Aster Electronics - six presentation days with multi-tier cascade",
+  "seed": "selected-features-2026",
+  "startDate": "2026-11-01",
+  "generatorVersion": "judges-six-days-v3",
+  "days": [
+    {
+      "index": 0,
+      "date": "2026-11-01",
+      "label": "Feature 18: audit history; healthy enterprise setup and ordinary transactions",
+      "catalog": {
+        "suppliers": [
+          {
+            "id": "SUP-FOUNDRY",
+            "name": "NovaSilicon Foundry",
+            "tier": 2,
+            "facility": "NovaSilicon Foundry production facility",
+            "components": [
+              "MCU-100"
+            ],
+            "approved": true,
+            "leadHours": 24,
+            "minOrder": 10,
+            "capacity": 600,
+            "unitCostCents": 1200,
+            "orgId": "partner"
+          },
+          {
+            "id": "SUP-EAST",
+            "name": "Helios Boards",
+            "tier": 1,
+            "facility": "Helios Boards production facility",
+            "components": [
+              "MCU-100"
+            ],
+            "approved": true,
+            "leadHours": 16,
+            "minOrder": 10,
+            "capacity": 600,
+            "unitCostCents": 1200,
+            "orgId": "partner"
+          },
+          {
+            "id": "SUP-CENTRAL",
+            "name": "Orion Circuit Assembly",
+            "tier": 1,
+            "facility": "Orion Circuit Assembly production facility",
+            "components": [
+              "MCU-100"
+            ],
+            "approved": true,
+            "leadHours": 16,
+            "minOrder": 10,
+            "capacity": 600,
+            "unitCostCents": 1200,
+            "orgId": "partner"
+          },
+          {
+            "id": "SUP-ALT",
+            "name": "Summit Component Supply",
+            "tier": 1,
+            "facility": "Summit Component Supply production facility",
+            "components": [
+              "MCU-100",
+              "DRIVE-400",
+              "SENSOR-500",
+              "LINK-600"
+            ],
+            "approved": true,
+            "leadHours": 12,
+            "minOrder": 10,
+            "capacity": 600,
+            "unitCostCents": 1200,
+            "orgId": "partner"
+          },
+          {
+            "id": "SUP-POWER",
+            "name": "Pioneer Power Components",
+            "tier": 1,
+            "facility": "Pioneer Power Components production facility",
+            "components": [
+              "POWER-200"
+            ],
+            "approved": true,
+            "leadHours": 16,
+            "minOrder": 10,
+            "capacity": 600,
+            "unitCostCents": 1200,
+            "orgId": "partner"
+          },
+          {
+            "id": "SUP-CONNECTOR",
+            "name": "Meridian Interconnects",
+            "tier": 1,
+            "facility": "Meridian Interconnects production facility",
+            "components": [
+              "CONN-300"
+            ],
+            "approved": true,
+            "leadHours": 16,
+            "minOrder": 10,
+            "capacity": 600,
+            "unitCostCents": 1200,
+            "orgId": "partner"
+          },
+          {
+            "id": "SUP-DRIVE",
+            "name": "Vector Drive Systems",
+            "tier": 1,
+            "facility": "Vector Drive Systems production facility",
+            "components": [
+              "DRIVE-400"
+            ],
+            "approved": true,
+            "leadHours": 16,
+            "minOrder": 10,
+            "capacity": 600,
+            "unitCostCents": 1200,
+            "orgId": "partner"
+          },
+          {
+            "id": "SUP-SENSOR",
+            "name": "Northline Sensor Modules",
+            "tier": 1,
+            "facility": "Northline Sensor Modules production facility",
+            "components": [
+              "SENSOR-500"
+            ],
+            "approved": true,
+            "leadHours": 16,
+            "minOrder": 10,
+            "capacity": 600,
+            "unitCostCents": 1200,
+            "orgId": "partner"
+          },
+          {
+            "id": "SUP-WAFER",
+            "name": "Quartz Wafer Materials",
+            "tier": 3,
+            "facility": "Quartz Wafer Materials production facility",
+            "components": [
+              "MCU-100"
+            ],
+            "approved": true,
+            "leadHours": 16,
+            "minOrder": 10,
+            "capacity": 600,
+            "unitCostCents": 1200,
+            "orgId": "partner"
+          },
+          {
+            "id": "SUP-MINERAL",
+            "name": "Silica Mineral Works",
+            "tier": 4,
+            "facility": "Silica Mineral Works production facility",
+            "components": [
+              "MCU-100"
+            ],
+            "approved": true,
+            "leadHours": 16,
+            "minOrder": 10,
+            "capacity": 600,
+            "unitCostCents": 1200,
+            "orgId": "partner"
+          },
+          {
+            "id": "SUP-CASCADE-RAW",
+            "name": "Terra Rare Materials",
+            "tier": 4,
+            "facility": "Terra Rare Materials production facility",
+            "components": [
+              "LINK-600"
+            ],
+            "approved": true,
+            "leadHours": 16,
+            "minOrder": 10,
+            "capacity": 600,
+            "unitCostCents": 1200,
+            "orgId": "partner",
+            "commitments": [
+              {
+                "itemId": "LINK-600",
+                "expectedQuantity": 240,
+                "confirmedQuantity": 240,
+                "dueAt": "2026-11-07T10:00:00.000Z",
+                "status": "ready",
+                "updatedAt": "2026-11-01T07:00:00.000Z"
+              }
+            ]
+          },
+          {
+            "id": "SUP-CASCADE-WAFER-A",
+            "name": "Aurora Substrates",
+            "tier": 3,
+            "facility": "Aurora Substrates production facility",
+            "components": [
+              "LINK-600"
+            ],
+            "approved": true,
+            "leadHours": 16,
+            "minOrder": 10,
+            "capacity": 600,
+            "unitCostCents": 1200,
+            "orgId": "partner"
+          },
+          {
+            "id": "SUP-CASCADE-WAFER-B",
+            "name": "Boreal Substrates",
+            "tier": 3,
+            "facility": "Boreal Substrates production facility",
+            "components": [
+              "LINK-600"
+            ],
+            "approved": true,
+            "leadHours": 16,
+            "minOrder": 10,
+            "capacity": 600,
+            "unitCostCents": 1200,
+            "orgId": "partner"
+          },
+          {
+            "id": "SUP-CASCADE-CHIP-A",
+            "name": "Atlas Link Chips",
+            "tier": 2,
+            "facility": "Atlas Link Chips production facility",
+            "components": [
+              "LINK-600"
+            ],
+            "approved": true,
+            "leadHours": 16,
+            "minOrder": 10,
+            "capacity": 600,
+            "unitCostCents": 1200,
+            "orgId": "partner"
+          },
+          {
+            "id": "SUP-CASCADE-CHIP-B",
+            "name": "Beacon Link Chips",
+            "tier": 2,
+            "facility": "Beacon Link Chips production facility",
+            "components": [
+              "LINK-600"
+            ],
+            "approved": true,
+            "leadHours": 16,
+            "minOrder": 10,
+            "capacity": 600,
+            "unitCostCents": 1200,
+            "orgId": "partner"
+          },
+          {
+            "id": "SUP-CASCADE-ASSEMBLY-A",
+            "name": "Vertex Link Assembly",
+            "tier": 1,
+            "facility": "Vertex Link Assembly production facility",
+            "components": [
+              "LINK-600"
+            ],
+            "approved": true,
+            "leadHours": 16,
+            "minOrder": 10,
+            "capacity": 600,
+            "unitCostCents": 1200,
+            "orgId": "partner"
+          },
+          {
+            "id": "SUP-CASCADE-ASSEMBLY-B",
+            "name": "Polar Link Assembly",
+            "tier": 1,
+            "facility": "Polar Link Assembly production facility",
+            "components": [
+              "LINK-600"
+            ],
+            "approved": true,
+            "leadHours": 16,
+            "minOrder": 10,
+            "capacity": 600,
+            "unitCostCents": 1200,
+            "orgId": "partner"
+          }
+        ],
+        "warehouses": [
+          {
+            "id": "WH-EAST",
+            "name": "East Distribution Hub",
+            "region": "East",
+            "capacity": 2000,
+            "status": "online"
+          },
+          {
+            "id": "WH-CENTRAL",
+            "name": "Central Distribution Hub",
+            "region": "Central",
+            "capacity": 2000,
+            "status": "online"
+          },
+          {
+            "id": "WH-WEST",
+            "name": "West Distribution Hub",
+            "region": "West",
+            "capacity": 2000,
+            "status": "online"
+          },
+          {
+            "id": "WH-RESERVE",
+            "name": "Reserve Logistics Hub",
+            "region": "Reserve",
+            "capacity": 2000,
+            "status": "online"
+          },
+          {
+            "id": "WH-NORTH",
+            "name": "North Distribution Hub",
+            "region": "North",
+            "capacity": 2000,
+            "status": "online"
+          }
+        ],
+        "dependencies": [
+          {
+            "id": "DEP-FOUNDRY-EAST",
+            "parentId": "SUP-EAST",
+            "childId": "SUP-FOUNDRY",
+            "itemId": "MCU-100",
+            "confidence": 0.98,
+            "source": "Synthetic verified bill-of-materials declaration",
+            "verified": true
+          },
+          {
+            "id": "DEP-FOUNDRY-CENTRAL",
+            "parentId": "SUP-CENTRAL",
+            "childId": "SUP-FOUNDRY",
+            "itemId": "MCU-100",
+            "confidence": 0.98,
+            "source": "Synthetic verified bill-of-materials declaration",
+            "verified": true
+          },
+          {
+            "id": "DEP-MINERAL-WAFER",
+            "parentId": "SUP-WAFER",
+            "childId": "SUP-MINERAL",
+            "itemId": "MCU-100",
+            "confidence": 0.98,
+            "source": "Synthetic verified multi-tier component dependency",
+            "verified": true
+          },
+          {
+            "id": "DEP-WAFER-FOUNDRY",
+            "parentId": "SUP-FOUNDRY",
+            "childId": "SUP-WAFER",
+            "itemId": "MCU-100",
+            "confidence": 0.98,
+            "source": "Synthetic verified multi-tier component dependency",
+            "verified": true
+          },
+          {
+            "id": "DEP-RAW-WAFER-A",
+            "parentId": "SUP-CASCADE-WAFER-A",
+            "childId": "SUP-CASCADE-RAW",
+            "itemId": "LINK-600",
+            "confidence": 0.98,
+            "source": "Synthetic verified multi-tier component dependency",
+            "verified": true
+          },
+          {
+            "id": "DEP-RAW-WAFER-B",
+            "parentId": "SUP-CASCADE-WAFER-B",
+            "childId": "SUP-CASCADE-RAW",
+            "itemId": "LINK-600",
+            "confidence": 0.98,
+            "source": "Synthetic verified multi-tier component dependency",
+            "verified": true
+          },
+          {
+            "id": "DEP-WAFER-CHIP-A",
+            "parentId": "SUP-CASCADE-CHIP-A",
+            "childId": "SUP-CASCADE-WAFER-A",
+            "itemId": "LINK-600",
+            "confidence": 0.98,
+            "source": "Synthetic verified multi-tier component dependency",
+            "verified": true
+          },
+          {
+            "id": "DEP-WAFER-CHIP-B",
+            "parentId": "SUP-CASCADE-CHIP-B",
+            "childId": "SUP-CASCADE-WAFER-B",
+            "itemId": "LINK-600",
+            "confidence": 0.98,
+            "source": "Synthetic verified multi-tier component dependency",
+            "verified": true
+          },
+          {
+            "id": "DEP-CHIP-ASSEMBLY-A",
+            "parentId": "SUP-CASCADE-ASSEMBLY-A",
+            "childId": "SUP-CASCADE-CHIP-A",
+            "itemId": "LINK-600",
+            "confidence": 0.98,
+            "source": "Synthetic verified multi-tier component dependency",
+            "verified": true
+          },
+          {
+            "id": "DEP-CHIP-ASSEMBLY-B",
+            "parentId": "SUP-CASCADE-ASSEMBLY-B",
+            "childId": "SUP-CASCADE-CHIP-B",
+            "itemId": "LINK-600",
+            "confidence": 0.98,
+            "source": "Synthetic verified multi-tier component dependency",
+            "verified": true
+          }
+        ],
+        "lots": [
+          {
+            "id": "LOT-EAST-MCU",
+            "name": "East controller receiving lot",
+            "itemId": "MCU-100",
+            "warehouseId": "WH-EAST",
+            "quantity": 0,
+            "reserved": 0,
+            "status": "available",
+            "version": 1
+          },
+          {
+            "id": "LOT-CENTRAL-MCU",
+            "name": "Central controller receiving lot",
+            "itemId": "MCU-100",
+            "warehouseId": "WH-CENTRAL",
+            "quantity": 0,
+            "reserved": 0,
+            "status": "available",
+            "version": 1
+          },
+          {
+            "id": "LOT-RESERVE-MCU",
+            "name": "Controller recovery reserve",
+            "itemId": "MCU-100",
+            "warehouseId": "WH-RESERVE",
+            "quantity": 600,
+            "reserved": 100,
+            "status": "available",
+            "version": 1
+          },
+          {
+            "id": "LOT-SMALL-MCU",
+            "name": "Small controller reserve",
+            "itemId": "MCU-100",
+            "warehouseId": "WH-WEST",
+            "quantity": 20,
+            "reserved": 5,
+            "status": "available",
+            "version": 1
+          },
+          {
+            "id": "LOT-WEST-POWER",
+            "name": "West power-module stock",
+            "itemId": "POWER-200",
+            "warehouseId": "WH-WEST",
+            "quantity": 200,
+            "reserved": 20,
+            "status": "available",
+            "version": 1
+          },
+          {
+            "id": "LOT-RESERVE-POWER",
+            "name": "Power-module recovery reserve",
+            "itemId": "POWER-200",
+            "warehouseId": "WH-RESERVE",
+            "quantity": 500,
+            "reserved": 100,
+            "status": "available",
+            "version": 1
+          },
+          {
+            "id": "LOT-WEST-CONNECTOR",
+            "name": "West connector stock and receipts",
+            "itemId": "CONN-300",
+            "warehouseId": "WH-WEST",
+            "quantity": 80,
+            "reserved": 0,
+            "status": "available",
+            "version": 1
+          },
+          {
+            "id": "LOT-EAST-CONNECTOR",
+            "name": "East service connector stock",
+            "itemId": "CONN-300",
+            "warehouseId": "WH-EAST",
+            "quantity": 80,
+            "reserved": 0,
+            "status": "available",
+            "version": 1
+          },
+          {
+            "id": "LOT-RESERVE-CONNECTOR",
+            "name": "Connector recovery reserve",
+            "itemId": "CONN-300",
+            "warehouseId": "WH-RESERVE",
+            "quantity": 200,
+            "reserved": 0,
+            "status": "available",
+            "version": 1
+          },
+          {
+            "id": "LOT-CENTRAL-DRIVE",
+            "name": "Central drive receiving lot",
+            "itemId": "DRIVE-400",
+            "warehouseId": "WH-CENTRAL",
+            "quantity": 0,
+            "reserved": 0,
+            "status": "available",
+            "version": 1
+          },
+          {
+            "id": "LOT-RESERVE-DRIVE",
+            "name": "Drive recovery reserve",
+            "itemId": "DRIVE-400",
+            "warehouseId": "WH-RESERVE",
+            "quantity": 500,
+            "reserved": 100,
+            "status": "available",
+            "version": 1
+          },
+          {
+            "id": "LOT-SMALL-DRIVE",
+            "name": "Small drive reserve",
+            "itemId": "DRIVE-400",
+            "warehouseId": "WH-EAST",
+            "quantity": 20,
+            "reserved": 5,
+            "status": "available",
+            "version": 1
+          },
+          {
+            "id": "LOT-AI-SENSOR",
+            "name": "North sensor stock for AI analysis",
+            "itemId": "SENSOR-500",
+            "warehouseId": "WH-NORTH",
+            "quantity": 180,
+            "reserved": 0,
+            "status": "available",
+            "version": 1
+          },
+          {
+            "id": "LOT-RESERVE-SENSOR",
+            "name": "Sensor recovery reserve",
+            "itemId": "SENSOR-500",
+            "warehouseId": "WH-RESERVE",
+            "quantity": 400,
+            "reserved": 100,
+            "status": "available",
+            "version": 1
+          },
+          {
+            "id": "LOT-CASCADE-EAST",
+            "name": "East link-module receiving lot",
+            "itemId": "LINK-600",
+            "warehouseId": "WH-EAST",
+            "quantity": 0,
+            "reserved": 0,
+            "status": "available",
+            "version": 1
+          },
+          {
+            "id": "LOT-CASCADE-NORTH",
+            "name": "North link-module receiving lot",
+            "itemId": "LINK-600",
+            "warehouseId": "WH-NORTH",
+            "quantity": 0,
+            "reserved": 0,
+            "status": "available",
+            "version": 1
+          },
+          {
+            "id": "LOT-RESERVE-LINK",
+            "name": "Independent link-module reserve",
+            "itemId": "LINK-600",
+            "warehouseId": "WH-RESERVE",
+            "quantity": 500,
+            "reserved": 100,
+            "status": "available",
+            "version": 1
+          }
+        ],
+        "shipments": [
+          {
+            "id": "SHP-MCU-EAST",
+            "supplierId": "SUP-EAST",
+            "warehouseId": "WH-EAST",
+            "itemId": "MCU-100",
+            "quantity": 60,
+            "status": "scheduled",
+            "eta": "2026-11-03T08:00:00.000Z",
+            "baselineEta": "2026-11-03T08:00:00.000Z",
+            "etaHistory": [
+              {
+                "eta": "2026-11-03T08:00:00.000Z",
+                "at": "2026-11-01T07:00:00.000Z",
+                "source": "Synthetic supplier dispatch schedule"
+              }
+            ],
+            "lotId": "LOT-EAST-MCU"
+          },
+          {
+            "id": "SHP-MCU-CENTRAL",
+            "supplierId": "SUP-CENTRAL",
+            "warehouseId": "WH-CENTRAL",
+            "itemId": "MCU-100",
+            "quantity": 40,
+            "status": "scheduled",
+            "eta": "2026-11-03T12:00:00.000Z",
+            "baselineEta": "2026-11-03T12:00:00.000Z",
+            "etaHistory": [
+              {
+                "eta": "2026-11-03T12:00:00.000Z",
+                "at": "2026-11-01T07:00:00.000Z",
+                "source": "Synthetic supplier dispatch schedule"
+              }
+            ],
+            "lotId": "LOT-CENTRAL-MCU"
+          },
+          {
+            "id": "SHP-POWER-WEST",
+            "supplierId": "SUP-POWER",
+            "warehouseId": "WH-WEST",
+            "itemId": "POWER-200",
+            "quantity": 150,
+            "status": "scheduled",
+            "eta": "2026-11-04T10:00:00.000Z",
+            "baselineEta": "2026-11-04T10:00:00.000Z",
+            "etaHistory": [
+              {
+                "eta": "2026-11-04T10:00:00.000Z",
+                "at": "2026-11-01T07:00:00.000Z",
+                "source": "Synthetic supplier dispatch schedule"
+              }
+            ],
+            "lotId": "LOT-WEST-POWER"
+          },
+          {
+            "id": "SHP-CONNECTOR-WEST",
+            "supplierId": "SUP-CONNECTOR",
+            "warehouseId": "WH-WEST",
+            "itemId": "CONN-300",
+            "quantity": 60,
+            "status": "scheduled",
+            "eta": "2026-11-03T09:00:00.000Z",
+            "baselineEta": "2026-11-03T09:00:00.000Z",
+            "etaHistory": [
+              {
+                "eta": "2026-11-03T09:00:00.000Z",
+                "at": "2026-11-01T07:00:00.000Z",
+                "source": "Synthetic supplier dispatch schedule"
+              }
+            ],
+            "lotId": "LOT-WEST-CONNECTOR"
+          },
+          {
+            "id": "SHP-DRIVE-CENTRAL",
+            "supplierId": "SUP-DRIVE",
+            "warehouseId": "WH-CENTRAL",
+            "itemId": "DRIVE-400",
+            "quantity": 80,
+            "status": "scheduled",
+            "eta": "2026-11-04T08:00:00.000Z",
+            "baselineEta": "2026-11-04T08:00:00.000Z",
+            "etaHistory": [
+              {
+                "eta": "2026-11-04T08:00:00.000Z",
+                "at": "2026-11-01T07:00:00.000Z",
+                "source": "Synthetic supplier dispatch schedule"
+              }
+            ],
+            "lotId": "LOT-CENTRAL-DRIVE"
+          },
+          {
+            "id": "SHP-CASCADE-EAST",
+            "supplierId": "SUP-CASCADE-ASSEMBLY-A",
+            "warehouseId": "WH-EAST",
+            "itemId": "LINK-600",
+            "quantity": 90,
+            "status": "scheduled",
+            "eta": "2026-11-07T12:00:00.000Z",
+            "baselineEta": "2026-11-07T12:00:00.000Z",
+            "etaHistory": [
+              {
+                "eta": "2026-11-07T12:00:00.000Z",
+                "at": "2026-11-01T07:00:00.000Z",
+                "source": "Synthetic supplier dispatch schedule"
+              }
+            ],
+            "lotId": "LOT-CASCADE-EAST"
+          },
+          {
+            "id": "SHP-CASCADE-NORTH",
+            "supplierId": "SUP-CASCADE-ASSEMBLY-B",
+            "warehouseId": "WH-NORTH",
+            "itemId": "LINK-600",
+            "quantity": 150,
+            "status": "scheduled",
+            "eta": "2026-11-07T14:00:00.000Z",
+            "baselineEta": "2026-11-07T14:00:00.000Z",
+            "etaHistory": [
+              {
+                "eta": "2026-11-07T14:00:00.000Z",
+                "at": "2026-11-01T07:00:00.000Z",
+                "source": "Synthetic supplier dispatch schedule"
+              }
+            ],
+            "lotId": "LOT-CASCADE-NORTH"
+          }
+        ],
+        "orders": [
+          {
+            "id": "ORD-HEALTH-MCU",
+            "customer": "Civic Health Devices",
+            "itemId": "MCU-100",
+            "warehouseId": "WH-EAST",
+            "quantity": 60,
+            "fulfilled": 0,
+            "deadline": "2026-11-06T12:00:00.000Z",
+            "priority": "critical",
+            "penaltyCents": 100000,
+            "status": "open"
+          },
+          {
+            "id": "ORD-AUTOMATION-MCU",
+            "customer": "Apex Automation",
+            "itemId": "MCU-100",
+            "warehouseId": "WH-CENTRAL",
+            "quantity": 40,
+            "fulfilled": 0,
+            "deadline": "2026-11-06T18:00:00.000Z",
+            "priority": "high",
+            "penaltyCents": 60000,
+            "status": "open"
+          },
+          {
+            "id": "ORD-TRANSIT-POWER",
+            "customer": "Meridian Transit Systems",
+            "itemId": "POWER-200",
+            "warehouseId": "WH-WEST",
+            "quantity": 100,
+            "fulfilled": 0,
+            "deadline": "2026-11-05T12:00:00.000Z",
+            "priority": "high",
+            "penaltyCents": 60000,
+            "status": "open"
+          },
+          {
+            "id": "ORD-WEST-CONNECTOR",
+            "customer": "West Field Service",
+            "itemId": "CONN-300",
+            "warehouseId": "WH-WEST",
+            "quantity": 40,
+            "fulfilled": 0,
+            "deadline": "2026-11-05T18:00:00.000Z",
+            "priority": "normal",
+            "penaltyCents": 60000,
+            "status": "open"
+          },
+          {
+            "id": "ORD-EAST-CONNECTOR",
+            "customer": "East Service Partners",
+            "itemId": "CONN-300",
+            "warehouseId": "WH-EAST",
+            "quantity": 30,
+            "fulfilled": 0,
+            "deadline": "2026-11-05T18:00:00.000Z",
+            "priority": "normal",
+            "penaltyCents": 60000,
+            "status": "open"
+          },
+          {
+            "id": "ORD-DRIVE-RECOVERY",
+            "customer": "Metro Robotics",
+            "itemId": "DRIVE-400",
+            "warehouseId": "WH-CENTRAL",
+            "quantity": 80,
+            "fulfilled": 0,
+            "deadline": "2026-11-06T18:00:00.000Z",
+            "priority": "high",
+            "penaltyCents": 60000,
+            "status": "open"
+          },
+          {
+            "id": "ORD-AI-SENSOR",
+            "customer": "Northline Instruments",
+            "itemId": "SENSOR-500",
+            "warehouseId": "WH-NORTH",
+            "quantity": 120,
+            "fulfilled": 0,
+            "deadline": "2026-11-08T12:00:00.000Z",
+            "priority": "normal",
+            "penaltyCents": 60000,
+            "status": "open"
+          },
+          {
+            "id": "ORD-CASCADE-EAST",
+            "customer": "Vertex Fleet Systems",
+            "itemId": "LINK-600",
+            "warehouseId": "WH-EAST",
+            "quantity": 90,
+            "fulfilled": 0,
+            "deadline": "2026-11-08T12:00:00.000Z",
+            "priority": "high",
+            "penaltyCents": 60000,
+            "status": "open"
+          },
+          {
+            "id": "ORD-CASCADE-NORTH",
+            "customer": "Polar Logistics Devices",
+            "itemId": "LINK-600",
+            "warehouseId": "WH-NORTH",
+            "quantity": 150,
+            "fulfilled": 0,
+            "deadline": "2026-11-08T18:00:00.000Z",
+            "priority": "critical",
+            "penaltyCents": 100000,
+            "status": "open"
+          }
+        ]
+      },
+      "documents": [],
+      "events": [
+        {
+          "id": "EV-D1-MCU-EAST-DISPATCH",
+          "type": "shipment_status",
+          "entityId": "SHP-MCU-EAST",
+          "time": "2026-11-01T08:00:00.000Z",
+          "source": "Aster Electronics synthetic enterprise feed",
+          "payload": {
+            "status": "in_transit"
+          }
+        },
+        {
+          "id": "EV-D1-MCU-CENTRAL-DISPATCH",
+          "type": "shipment_status",
+          "entityId": "SHP-MCU-CENTRAL",
+          "time": "2026-11-01T08:15:00.000Z",
+          "source": "Aster Electronics synthetic enterprise feed",
+          "payload": {
+            "status": "in_transit"
+          }
+        },
+        {
+          "id": "EV-D1-POWER-DISPATCH",
+          "type": "shipment_status",
+          "entityId": "SHP-POWER-WEST",
+          "time": "2026-11-01T08:30:00.000Z",
+          "source": "Aster Electronics synthetic enterprise feed",
+          "payload": {
+            "status": "in_transit"
+          }
+        },
+        {
+          "id": "EV-D1-DRIVE-DISPATCH",
+          "type": "shipment_status",
+          "entityId": "SHP-DRIVE-CENTRAL",
+          "time": "2026-11-01T08:45:00.000Z",
+          "source": "Aster Electronics synthetic enterprise feed",
+          "payload": {
+            "status": "in_transit"
+          }
+        },
+        {
+          "id": "EV-D1-CONNECTOR-RECEIPT",
+          "type": "shipment_status",
+          "entityId": "SHP-CONNECTOR-WEST",
+          "time": "2026-11-01T11:00:00.000Z",
+          "source": "Aster Electronics synthetic enterprise feed",
+          "payload": {
+            "status": "delivered",
+            "quantity": 20
+          }
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "date": "2026-11-02",
+      "label": "Feature 4: one upstream supplier-delay incident and downstream propagation",
+      "catalog": {
+        "suppliers": [],
+        "warehouses": [],
+        "dependencies": [],
+        "lots": [],
+        "shipments": [],
+        "orders": []
+      },
+      "documents": [],
+      "events": [
+        {
+          "id": "EV-D2-CONNECTOR-RECEIPT",
+          "type": "shipment_status",
+          "entityId": "SHP-CONNECTOR-WEST",
+          "time": "2026-11-02T09:00:00.000Z",
+          "source": "Aster Electronics synthetic enterprise feed",
+          "payload": {
+            "status": "delivered",
+            "quantity": 40
+          }
+        },
+        {
+          "id": "EV-D2-FOUNDRY-DELAY",
+          "type": "supplier_delay",
+          "entityId": "SUP-FOUNDRY",
+          "time": "2026-11-02T10:00:00.000Z",
+          "source": "Aster Electronics synthetic enterprise feed",
+          "payload": {
+            "delayHours": 96
+          }
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "date": "2026-11-03",
+      "label": "Feature 6: one warehouse-outage incident and explicit service restoration",
+      "catalog": {
+        "suppliers": [],
+        "warehouses": [],
+        "dependencies": [],
+        "lots": [],
+        "shipments": [],
+        "orders": []
+      },
+      "documents": [],
+      "events": [
+        {
+          "id": "EV-D3-CONNECTOR-RECEIPT",
+          "type": "shipment_status",
+          "entityId": "SHP-CONNECTOR-WEST",
+          "time": "2026-11-03T09:00:00.000Z",
+          "source": "Aster Electronics synthetic enterprise feed",
+          "payload": {
+            "status": "delivered",
+            "quantity": 60
+          }
+        },
+        {
+          "id": "EV-D3-WEST-OUTAGE",
+          "type": "warehouse_outage",
+          "entityId": "WH-WEST",
+          "time": "2026-11-03T10:00:00.000Z",
+          "source": "Aster Electronics synthetic enterprise feed",
+          "payload": {
+            "status": "outage"
+          }
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "date": "2026-11-04",
+      "label": "Feature 13: one late-shipment incident for dedicated recovery comparison and execution",
+      "catalog": {
+        "suppliers": [],
+        "warehouses": [],
+        "dependencies": [],
+        "lots": [],
+        "shipments": [],
+        "orders": []
+      },
+      "documents": [],
+      "events": [
+        {
+          "id": "EV-D4-DRIVE-DELAY",
+          "type": "shipment_eta",
+          "entityId": "SHP-DRIVE-CENTRAL",
+          "time": "2026-11-04T10:00:00.000Z",
+          "source": "Aster Electronics synthetic enterprise feed",
+          "payload": {
+            "eta": "2026-11-07T08:00:00.000Z"
+          }
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "date": "2026-11-05",
+      "label": "Feature 17: one sensor-stock shortage for conversational AI and hypothetical analysis",
+      "catalog": {
+        "suppliers": [],
+        "warehouses": [],
+        "dependencies": [],
+        "lots": [],
+        "shipments": [],
+        "orders": []
+      },
+      "documents": [],
+      "events": [
+        {
+          "id": "EV-D5-SENSOR-COUNT",
+          "type": "stock_count",
+          "entityId": "LOT-AI-SENSOR",
+          "time": "2026-11-05T10:00:00.000Z",
+          "source": "Aster Electronics synthetic enterprise feed",
+          "payload": {
+            "quantity": 40,
+            "meaning": "on_hand"
+          }
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "date": "2026-11-06",
+      "label": "One tier-4 broken supply commitment cascading through tier 3, tier 2, tier 1 and two customer orders",
+      "catalog": {
+        "suppliers": [],
+        "warehouses": [],
+        "dependencies": [],
+        "lots": [],
+        "shipments": [],
+        "orders": []
+      },
+      "documents": [],
+      "events": [
+        {
+          "id": "EV-D6-CASCADE-COMMITMENT",
+          "type": "supplier_commitment",
+          "entityId": "SUP-CASCADE-RAW",
+          "time": "2026-11-06T10:00:00.000Z",
+          "source": "Aster Electronics synthetic enterprise feed",
+          "payload": {
+            "itemId": "LINK-600",
+            "expectedQuantity": 240,
+            "confirmedQuantity": 0,
+            "dueAt": "2026-11-07T10:00:00.000Z",
+            "status": "broken"
+          }
+        }
+      ]
+    }
+  ]
+}

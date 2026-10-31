@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { createSeedState } from '../src/domain/seed';
-import { decidePlan, generatePlans } from '../src/domain/plans';
+import { createSeedState } from './fixtures/enterprise';
+import { decidePlan } from '../src/domain/plans';
 import { DomainError } from '../src/domain/common';
 import type { Actor, RecoveryPlan, State } from '../src/shared/types';
 
@@ -8,8 +8,6 @@ const analyst: Actor = { id: 'analyst-1', name: 'Analyst', email: 'a@test', role
 const manager: Actor = { id: 'manager-1', name: 'Manager 1', email: 'm1@test', role: 'manager', orgId: 'focal' };
 const manager2: Actor = { id: 'manager-2', name: 'Manager 2', email: 'm2@test', role: 'manager', orgId: 'focal' };
 const admin: Actor = { id: 'admin-1', name: 'Admin', email: 'adm@test', role: 'admin', orgId: 'focal' };
-const procurement: Actor = { id: 'procurement-1', name: 'Procurement', email: 'p@test', role: 'procurement', orgId: 'focal' };
-const partner: Actor = { id: 'partner-1', name: 'Partner', email: 'part@test', role: 'viewer', orgId: 'partner' };
 
 function rejects(fn: () => unknown, status: number) {
   try {

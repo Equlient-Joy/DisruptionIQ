@@ -1,6 +1,6 @@
 import type { State, Actor } from '../../src/shared/types';
-import { createSeedState } from '../../src/domain/seed';
-import { runScenario } from '../../src/domain/engine';
+import { createSeedState } from './enterprise';
+import { runScenario } from './scenarios';
 
 export function buildRichSeedState(now = new Date('2026-10-30T06:00:00Z')): State {
   return createSeedState(now);

@@ -3,8 +3,6 @@ import { Repository } from '../src/server/repository';
 import { createApp } from '../src/server/app';
 import {
   DOCUMENT_MAX_BYTES,
-  DOCUMENT_MAX_PAGES,
-  DOCUMENT_CHUNK_CHARS,
   DOCUMENT_CHUNK_OVERLAP_CHARS,
   chunkPages,
   extractPages,

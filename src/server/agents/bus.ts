@@ -81,8 +81,5 @@ export class AgentEventBus {
 
   clear(): void {
     this.handlers.clear();
-    this.inFlight.clear();
   }
 }
-
-export const agentBus = new AgentEventBus();

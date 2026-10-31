@@ -55,6 +55,8 @@ export interface FeasibilityResult {
   feasible: boolean;
   onTime: boolean;
   reasons: string[];
+  trustFeasibility: 'robust' | 'conditional' | 'infeasible';
+  verificationAction?: string;
 }
 
 export function evaluateCandidateConstraints(
@@ -68,7 +70,7 @@ export function evaluateCandidateConstraints(
   let costCents = 0;
 
   if (!order) {
-    return { arrivesAt, costCents, feasible: false, onTime: false, reasons: ['Order reference missing; feasibility cannot be established'] };
+    return { arrivesAt, costCents, feasible: false, onTime: false, reasons: ['Order reference missing; feasibility cannot be established'], trustFeasibility: 'infeasible' };
   }
 
   const deadline = orderDeadline || order.deadline;
@@ -137,6 +139,8 @@ export function evaluateCandidateConstraints(
       if (supplier.capacity < candidate.quantity) reasons.push(`Supplier remaining capacity ${supplier.capacity} is below requested ${candidate.quantity}`);
       const upstream = new Set(upstreamPaths(state, supplier.id).flat());
       const disrupted = state.incidents.filter(i => i.type === 'supplier_delay' && i.status === 'active' && upstream.has(i.entityId));
+      const brokenCommitments = state.suppliers.filter(s => upstream.has(s.id)).flatMap(s => (s.commitments || []).filter(c => c.itemId === order.itemId && (c.status === 'broken' || c.confirmedQuantity < c.expectedQuantity)));
+      if (brokenCommitments.length) reasons.push('Alternate source shares an upstream broken supply commitment');
       const delay = disrupted.reduce((n, i) => Math.max(n, ...state.events.filter(e => e.entityId === i.entityId && e.type === 'supplier_delay' && e.status === 'accepted').map(e => typeof e.payload.delayHours === 'number' ? e.payload.delayHours : 0)), 0);
       arrivesAt = integer(supplier.leadHours) ? atHours(state, supplier.leadHours + delay) : state.clock;
       costCents = integer(supplier.unitCostCents) ? candidate.quantity * supplier.unitCostCents : 0;
@@ -155,7 +159,45 @@ export function evaluateCandidateConstraints(
     reasons.push(`Arrival ${arrivesAt} misses deadline ${deadline}`);
   }
 
-  return { arrivesAt, costCents, feasible: reasons.length === 0, onTime, reasons };
+  let trustFeasibility: 'robust' | 'conditional' | 'infeasible' = 'infeasible';
+  let verificationAction: string | undefined = undefined;
+
+  const hasOnlyTrustIssues = reasons.length > 0 && reasons.every(r =>
+    r.includes('quality hold') ||
+    r.includes('disputed') ||
+    r.includes('held') ||
+    r.includes('unverified')
+  );
+
+  if (reasons.length === 0) {
+    if (candidate.type === 'expedite') {
+      const shipment = state.shipments.find(s => s.id === candidate.sourceId);
+      const unverifiedDep = shipment && state.dependencies.some(d => d.parentId === shipment.supplierId && !d.verified);
+      if (unverifiedDep) {
+        trustFeasibility = 'conditional';
+        verificationAction = `Plan operates conditionally on unverified Tier-2 supplier link for shipment ${shipment.id}.`;
+      } else {
+        trustFeasibility = 'robust';
+      }
+    } else {
+      trustFeasibility = 'robust';
+    }
+  } else if (hasOnlyTrustIssues && onTime) {
+    trustFeasibility = 'conditional';
+    if (candidate.type === 'reallocate' || candidate.type === 'split_order') {
+      const lot = state.lots.find(l => l.id === candidate.sourceId);
+      verificationAction = `Plan becomes robust if warehouse operator confirms/dispositions lot ${lot?.id} (currently ${lot?.status}).`;
+    } else if (candidate.type === 'expedite') {
+      const shipment = state.shipments.find(s => s.id === candidate.sourceId);
+      verificationAction = `Plan becomes robust if inspection hold on shipment ${shipment?.id} / lot ${shipment?.lotId} is resolved.`;
+    } else {
+      verificationAction = 'Plan becomes robust once upstream vendor capacity and quality are verified.';
+    }
+  } else {
+    trustFeasibility = 'infeasible';
+  }
+
+  return { arrivesAt, costCents, feasible: reasons.length === 0, onTime, reasons, trustFeasibility, verificationAction };
 }
 
 export class DeterministicTemplatePlanner implements RecoveryPlanner {
@@ -306,6 +348,7 @@ function executePlanAtomic(
     message: notifMessage,
     read: false,
     orgId: 'focal',
+    targetRoles: plan.breakGlass ? ['admin', 'manager', 'analyst'] : ['manager', 'analyst', 'warehouse', 'procurement', 'admin'],
   });
 }
 
@@ -480,6 +523,7 @@ export function decidePlan(state: State, id: string, action: PlanAction, actor: 
       message: `High-risk recovery plan ${plan.id} received first approval from ${actor.name}. Second approval required.`,
       read: false,
       orgId: 'focal',
+      targetRoles: ['manager', 'admin', 'procurement'],
     });
     return plan;
   }

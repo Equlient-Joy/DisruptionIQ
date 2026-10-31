@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { createSeedState } from '../src/domain/seed';
-import { runScenario } from '../src/domain/engine';
+import { createSeedState } from './fixtures/enterprise';
+import { runScenario } from './fixtures/scenarios';
 import { getImpact } from '../src/domain/impact';
 import type { Actor, Order } from '../src/shared/types';
 

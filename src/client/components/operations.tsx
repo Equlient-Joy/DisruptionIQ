@@ -1,9 +1,9 @@
-import { Activity, ArrowRight, ArrowUpRight, Bell, Box, Check, ChevronRight, Clock3, GitBranch, Layers3, ListChecks, ShieldAlert, ShieldCheck, Sparkles, TriangleAlert, Truck, Zap } from 'lucide-react';
-import { useState } from 'react';
+import { Activity, ArrowRight, ArrowUpRight, Box, Check, ChevronRight, Clock3, GitBranch, Layers3, ListChecks, ShieldAlert, ShieldCheck, Sparkles, TriangleAlert, Zap } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import type { Impact, Incident, RecoveryPlan } from '../../shared/types';
 import type { ViewProps } from '../model';
-import { Badge, Empty, formatTime, LinkButton, money, number, Panel, SectionHeading } from './ui';
-import { AiActivityFeed } from './ai-activity';
+import { Badge, Empty, formatTime, money, number, Panel, SectionHeading } from './ui';
+
 
 const planNames = { reallocate: 'Reallocate inventory', expedite: 'Expedite shipment', alternative_supplier: 'Alternative supplier', split_order: 'Split customer order' };
 const planIcons = { reallocate: Box, expedite: Zap, alternative_supplier: GitBranch, split_order: Layers3 };
@@ -70,37 +70,6 @@ function IncidentRow({ incident, onClick, state }: { incident: Incident; onClick
   return <button className={`incident-row ${state || ''}`} onClick={onClick}><span className={`incident-symbol ${incident.status}`}><TriangleAlert size={18}/></span><div><strong>{incident.title}</strong><span>{incident.affectedOrderIds.length} affected orders · {incident.alertCount} correlated alerts</span><small>{incident.id} · {formatTime(incident.createdAt)} UTC</small></div><ChevronRight size={17}/></button>;
 }
 
-export function Overview(props: ViewProps) {
-  const { data, navigate } = props;
-  const { state } = data;
-  const active = state.incidents.filter(incident => incident.status !== 'resolved');
-  const resolved = state.incidents.filter(incident => incident.status === 'resolved').length;
-  const progress = state.incidents.length ? Math.round(resolved / state.incidents.length * 100) : 0;
-  const pending = state.plans.filter(plan => plan.status === 'proposed' && plan.feasible).length;
-  const shortage = data.impacts.reduce((sum, impact) => sum + impact.shortage, 0);
-  const metrics = [
-    { label: 'Active disruptions', value: active.length, sub: `${state.incidents.filter(incident => incident.status === 'recovering').length} in recovery`, icon: Activity, tone: 'orange' },
-    { label: 'Affected orders', value: data.impacts.length, sub: `${number(shortage)} units exposed`, icon: Box, tone: 'red' },
-    { label: 'Pending approvals', value: pending, sub: 'Feasible proposals awaiting review', icon: ListChecks, tone: 'blue' },
-    { label: 'Recovery progress', value: `${progress}%`, sub: `${resolved} of ${state.incidents.length} incidents resolved`, icon: ShieldCheck, tone: 'teal' },
-  ];
-  return <><SectionHeading title="Your supply chain, in focus." detail="Live exposure. Clear priorities. Accountable recovery."><button className="button secondary" onClick={() => navigate('history')}><Clock3 size={16}/>Decision history</button></SectionHeading>
-    <div className="overview-banner"><div><span className="eyebrow">OPERATIONAL PICTURE</span><h2>{active.length ? `${active.length} disruption${active.length === 1 ? '' : 's'} need${active.length === 1 ? 's' : ''} your attention` : 'Ready for the next disruption'}</h2><p>{active.length ? 'Trace the evidence, compare recovery paths, and coordinate the next decision.' : 'The linked network is loaded. Run a synthetic scenario to see detection and recovery in action.'}</p><button className="banner-link" onClick={() => navigate('incidents')}>Open incident workspace <ArrowRight size={16}/></button></div><div className="banner-orbit" aria-hidden="true"><span className="orbit-node n1"><Truck size={19}/></span><span className="orbit-node n2"><Box size={19}/></span><span className="orbit-node n3"><GitBranch size={19}/></span><span className="orbit-center"><Activity size={35} strokeWidth={1.4}/></span></div></div>
-    <div className="metrics">{metrics.map(metric => <button key={metric.label} className="metric" onClick={() => navigate(metric.label === 'Recovery progress' ? 'history' : 'incidents')}><div className="metric-top"><span>{metric.label}</span><span className={`metric-icon ${metric.tone}`}><metric.icon size={18}/></span></div><strong className="metric-value">{metric.value}</strong><span className="metric-note">{metric.sub}</span></button>)}</div>
-    <div className="overview-grid"><Panel title="Orders at risk" eyebrow="PRIORITY QUEUE" action={<LinkButton onClick={() => navigate('incidents')}>View recovery</LinkButton>}><RiskTable data={data} navigate={navigate}/></Panel><Panel title="Incident watch" eyebrow="CORRELATED SIGNALS" action={<span className="count-pill">{active.length}</span>}>{active.length ? <div className="incident-list">{active.slice(0, 4).map(incident => <IncidentRow key={incident.id} incident={incident} onClick={() => navigate('incidents', incident.id)}/>)}</div> : <Empty title="No active disruptions" detail="Scenario A covers shared supplier exposure. Scenario B covers quality and document evidence."/>}<div className="panel-foot"><span className="status-dot"/>Evidence is preserved across correlated alerts</div></Panel></div>
-    <div className="overview-bottom"><Panel title="Recent activity" action={<LinkButton onClick={() => navigate('history')}>Full timeline</LinkButton>}>{state.decisions.length ? <div className="compact-timeline">{state.decisions.slice(-4).reverse().map(decision => <div key={decision.id}><span className="timeline-point"/><div><strong>{decision.action.replaceAll('_', ' ')}</strong><p>{decision.detail}</p><small>{formatTime(decision.at)} UTC · {decision.entityId}</small></div></div>)}</div> : <Empty title="A clean decision trail" detail="Ingestion, review, and simulated execution are recorded here."/>}</Panel><Panel title="Team notifications" action={<Bell size={18} className="muted"/>}>{state.notifications.length ? <div className="notifications">{state.notifications.slice(-4).reverse().map(notification => <div key={notification.id}><span className="notification-dot"/><div><p>{notification.message}</p><small>{formatTime(notification.at)} UTC</small></div>{notification.incidentId ? <button className="icon-button" aria-label="Open notification incident" onClick={() => navigate('incidents', notification.incidentId)}><ChevronRight size={16}/></button> : null}</div>)}</div> : <Empty title="You're up to date" detail="Updates for your organization will appear here."/>}</Panel></div>
-    <div className="overview-agent-feed-container" style={{ marginTop: '20px' }}>
-      <Panel
-        title="Autonomous Agent Activity"
-        eyebrow="MULTI-AGENT AUDIT FEED"
-        action={<LinkButton onClick={() => navigate('history')}>Full audit log</LinkButton>}
-      >
-        <AiActivityFeed limit={4} />
-      </Panel>
-    </div>
-  </>;
-}
-
 function PlanCard({ plan, props }: { plan: RecoveryPlan; props: ViewProps }) {
   const { data, pending, open } = props;
   const Icon = planIcons[plan.type];
@@ -124,6 +93,12 @@ function PlanCard({ plan, props }: { plan: RecoveryPlan; props: ViewProps }) {
           <span>{plan.orderId} · v{plan.version}</span>
         </div>
         <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+          {plan.trustFeasibility ? (
+            <Badge
+              value={plan.trustFeasibility === 'robust' ? 'active' : plan.trustFeasibility === 'conditional' ? 'at-risk' : 'fail'}
+              label={`${plan.trustFeasibility.toUpperCase()}`}
+            />
+          ) : null}
           <Badge value={plan.riskLevel || 'routine'} label={`${plan.riskLevel || 'routine'} risk`} />
           <Badge value={plan.status} />
         </div>
@@ -141,6 +116,11 @@ function PlanCard({ plan, props }: { plan: RecoveryPlan; props: ViewProps }) {
         <strong>{plan.feasible ? 'Passes current constraints' : 'Constraint check failed'}</strong>
       </div>
       {plan.reasons.length ? <ul className="constraint-reasons">{plan.reasons.map((reason, i) => <li key={i}>{reason}</li>)}</ul> : null}
+      {plan.trustFeasibility === 'conditional' && plan.verificationAction ? (
+        <div className="verification-callout" style={{ margin: '8px 0', padding: '6px 10px', fontSize: '0.8rem', background: '#fefce8', border: '1px solid #fef08a', borderRadius: '6px', color: '#854d0e' }}>
+          <strong>Action to make robust:</strong> {plan.verificationAction}
+        </div>
+      ) : null}
       <p className="plan-rationale">{plan.rationale}</p>
       <details className="plan-evidence">
         <summary>Evidence & proposal trace</summary>
@@ -219,15 +199,101 @@ export function Incidents(props: ViewProps & { selectedId?: string }) {
   const events = data.state.events.filter(event => event.entityId === selected?.entityId || evidenceIds.has(event.id) || selected?.type === 'stock_shortage' && data.state.lots.some(lot => lot.id === event.entityId && lot.itemId === selected.entityId));
   const aiReports = data.state.aiReports.filter(report => report.incidentId === selected?.id);
   const canGenerate = data.actor.orgId === 'focal' && ['analyst', 'manager', 'procurement', 'admin'].includes(data.actor.role);
-  return <><SectionHeading title="Incidents & recovery" detail="Turn correlated signals into validated, human-reviewed actions."/>
-    <div className="incident-workspace"><aside className="incident-sidebar panel"><div className="incident-toolbar"><label className="sr-only" htmlFor="incident-search">Search incidents</label><input id="incident-search" placeholder="Search incidents…" value={search} onChange={event => setSearch(event.target.value)}/><label className="sr-only" htmlFor="incident-filter">Incident status</label><select id="incident-filter" value={filter} onChange={event => setFilter(event.target.value)}><option value="all">All statuses</option><option value="active">Active</option><option value="recovering">Recovering</option><option value="resolved">Resolved</option></select></div>{incidents.length ? <div className="incident-list">{incidents.map(incident => <IncidentRow key={incident.id} incident={incident} state={selected?.id === incident.id ? 'selected' : undefined} onClick={() => navigate('incidents', incident.id)}/>)}</div> : <Empty title="No incidents found" detail="Try another filter or run a synthetic scenario."/>}</aside>
+  useEffect(() => { props.selectEntity?.(selected?.id); }, [selected?.id, props.selectEntity]);
+  return <><SectionHeading title="Incidents" detail="Find the problem, understand its impact, and trace the evidence."/>
+    <div className="incident-workspace"><aside className="incident-sidebar panel"><div className="incident-toolbar"><label className="sr-only" htmlFor="incident-search">Search incidents</label><input id="incident-search" placeholder="Search incidents…" value={search} onChange={event => setSearch(event.target.value)}/><label className="sr-only" htmlFor="incident-filter">Incident status</label><select id="incident-filter" value={filter} onChange={event => setFilter(event.target.value)}><option value="all">All statuses</option><option value="active">Active</option><option value="recovering">Recovering</option><option value="resolved">Resolved</option></select></div>{incidents.length ? <div className="incident-list">{incidents.map(incident => <IncidentRow key={incident.id} incident={incident} state={selected?.id === incident.id ? 'selected' : undefined} onClick={() => navigate('incidents', incident.id)}/>)}</div> : <Empty title="No incidents found" detail="Try another filter or capture an operational event."/>}</aside>
     {selected ? <div className="incident-detail"><Panel title={selected.title} eyebrow={`${selected.id} · ${selected.type.replaceAll('_', ' ')}`} action={<Badge value={selected.status}/>}><p className="incident-description">{selected.description}</p><div className="incident-meta"><span><Clock3 size={15}/>{formatTime(selected.createdAt)} UTC</span><span><Activity size={15}/>{selected.alertCount} correlated alerts</span><span><Box size={15}/>{selected.affectedOrderIds.length} linked orders</span></div><div className="evidence-strip"><strong>Root entity</strong><code>{selected.entityId}</code><span>{selected.memberOrgIds.length} participating organizations</span></div></Panel>
       <Panel title="Affected orders" eyebrow="DETERMINISTIC EXPOSURE"><RiskTable data={data} navigate={navigate} impacts={impacts}/></Panel>
-      <Panel title="Recovery options" eyebrow="COMPARE BEFORE YOU COMMIT" action={canGenerate ? <button className="button primary small" disabled={pending} onClick={() => execute({ path: '/plans/generate', body: { incidentId: selected.id } }, 'Recovery options generated against current constraints.')}><GitBranch size={16}/>{plans.length ? 'Recalculate options' : 'Generate recovery options'}</button> : null}>
-        <p className="panel-intro">Inventory, reservations, quality status, capacity and deadlines control feasibility. Approval rechecks current evidence before simulated execution.</p>{plans.length ? <div className="plan-grid">{plans.map(plan => <PlanCard key={plan.id} plan={plan} props={props}/>)}</div> : <Empty title="Recovery options are ready to calculate" detail={canGenerate ? 'Generate candidates to compare all four recovery paths, including rejected constraints.' : 'An operations analyst can generate recovery proposals for this incident.'}/>}
-      </Panel>
+      <div className="recovery-link-banner"><div><span className="eyebrow">NEXT STEP</span><h3>{plans.length ? `${plans.length} recovery options recorded` : 'Find a path to recovery'}</h3><p>Compare solutions, check constraints and review approvals in Recovery.</p></div><button className="button primary" onClick={() => navigate('recovery', selected.id)}>View recovery <ArrowRight size={16}/></button></div>
       <Panel title="AI decision support" eyebrow="GROUNDED IN INCIDENT EVIDENCE" action={canGenerate ? <button className="button secondary small" disabled={pending || !data.aiConfigured} onClick={() => execute({ path: `/ai/${selected.id}`, body: {} }, 'AI assessment added to the decision trail.')}><Sparkles size={16}/>Generate AI assessment</button> : null}>{!data.aiConfigured ? <div className="ai-unavailable"><Sparkles size={20}/><div><strong>AI provider is not configured</strong><p>Summaries and AI recommendations are unavailable. The server requires an authorized provider endpoint, model and key. Deterministic recovery validation remains available.</p></div></div> : null}{aiReports.length ? aiReports.map(report => <article className="ai-report" key={report.id}><div><Badge value={report.status}/><small>{report.model} · {formatTime(report.at)} UTC</small></div><p>{report.text}</p><details><summary>Evidence and input trace</summary><p>{report.evidenceIds.join(' · ') || 'No linked evidence'}</p>{report.inputHash ? <code>{report.inputHash}</code> : null}</details></article>) : data.aiConfigured ? <p className="muted">Request an assessment based on the current incident, ranked impacts, and validated alternatives.</p> : null}</Panel>
       <Panel title="Source evidence" eyebrow="OBSERVED CLAIMS">{events.length ? <div className="evidence-items">{events.map(event => <article key={`${event.id}-${event.receivedAt}`}><div><strong>{event.type.replaceAll('_', ' ')}</strong><Badge value={event.status}/></div><p>{event.message}</p><small>{event.id} · {event.source} · effective {formatTime(event.time)} UTC</small><details><summary>Raw payload</summary><pre>{JSON.stringify(event.payload, null, 2)}</pre></details></article>)}</div> : <Empty title="No direct event claims in this view" detail="Review Data & evidence for the full permitted intake journal. Dependency-derived incidents can reach downstream orders without a direct event on each order."/>}</Panel>
-    </div> : <Panel title="Start an incident workflow"><Empty title="The incident workspace is clear" detail="Run Scenario A or B from the top bar to create real synthetic signals, exposure and collaborative tasks."/></Panel>}</div>
+    </div> : <Panel title="Start an incident workflow"><Empty title="The incident workspace is clear" detail="Import operational records and capture an event from Data & evidence to assess exposure and recovery."/></Panel>}</div>
   </>;
+}
+
+export function Recovery(props: ViewProps & { selectedId?: string }) {
+  const { data, pending, execute, navigate, selectedId } = props;
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('all');
+  const [incidentFilter, setIncidentFilter] = useState(selectedId || 'all');
+  useEffect(() => { if (selectedId) setIncidentFilter(data.state.plans.find(x => x.id === selectedId)?.incidentId || selectedId); }, [selectedId, data.state.plans]);
+  useEffect(() => { props.selectEntity?.(incidentFilter === 'all' ? undefined : incidentFilter); }, [incidentFilter, props.selectEntity]);
+  const canGenerate = data.actor.orgId === 'focal' && ['analyst', 'manager', 'procurement', 'admin'].includes(data.actor.role);
+  const visiblePlans = data.state.plans.filter(x => (incidentFilter === 'all' || x.incidentId === incidentFilter) && (status === 'all' || x.status === status || status === 'feasible' && x.feasible || status === 'infeasible' && !x.feasible) && `${x.id} ${x.type} ${x.rationale} ${x.sourceId} ${data.state.incidents.find(i => i.id === x.incidentId)?.title || ''}`.toLowerCase().includes(search.toLowerCase()));
+  const groups = data.state.incidents.filter(x => (incidentFilter === 'all' || x.id === incidentFilter) && (visiblePlans.some(p => p.incidentId === x.id) || !search && status === 'all' && x.status !== 'resolved'));
+  return <><SectionHeading title="Recovery" detail="Compare the options. Understand the tradeoffs. Approve with confidence."/>
+    <div className="mini-metrics"><div><ListChecks size={18}/><strong>{data.state.plans.filter(x => x.feasible && ['proposed', 'awaiting_second_approval'].includes(x.status)).length}</strong><span>awaiting approval</span></div><div><ShieldCheck size={18}/><strong>{data.state.plans.filter(x => x.status === 'executed').length}</strong><span>executed recoveries</span></div><div><GitBranch size={18}/><strong>{data.state.plans.filter(x => x.feasible).length}</strong><span>feasible options</span></div></div>
+    <div className="filter-bar"><input aria-label="Search recovery proposals" placeholder="Search proposals, sources or incidents…" value={search} onChange={e => setSearch(e.target.value)}/><select aria-label="Recovery incident" value={incidentFilter} onChange={e => setIncidentFilter(e.target.value)}><option value="all">All incidents</option>{data.state.incidents.map(x => <option key={x.id} value={x.id}>{x.title}</option>)}</select><select aria-label="Recovery status" value={status} onChange={e => setStatus(e.target.value)}><option value="all">All proposal statuses</option><option value="feasible">Feasible options</option><option value="infeasible">Blocked options</option>{['proposed', 'awaiting_second_approval', 'executed', 'rejected', 'stale'].map(x => <option key={x} value={x}>{x.replaceAll('_', ' ')}</option>)}</select><span className="results-count">{visiblePlans.length} proposals</span></div>
+    {groups.length ? groups.map(incident => <Panel key={incident.id} title={incident.title} eyebrow={`${incident.status.toUpperCase()} · ${incident.affectedOrderIds.length} AFFECTED ORDERS`} action={<div className="button-row"><button className="text-button" onClick={() => navigate('incidents', incident.id)}>View incident <ArrowRight size={14}/></button>{canGenerate ? <button className="button primary small" disabled={pending || incident.status === 'resolved'} onClick={() => execute({ path: '/plans/generate', body: { incidentId: incident.id } }, 'Recovery options generated against current constraints.')}><GitBranch size={15}/>{data.state.plans.some(x => x.incidentId === incident.id) ? 'Recalculate options' : 'Generate options'}</button> : null}</div>}><p className="panel-intro">Options are checked against current stock, quality, capacity and deadlines. Approval revalidates these constraints.</p>{visiblePlans.some(x => x.incidentId === incident.id) ? <div className="plan-grid recovery-plan-grid">{visiblePlans.filter(x => x.incidentId === incident.id).map(plan => <PlanCard key={plan.id} plan={plan} props={props}/>)}</div> : <Empty title="No recovery proposals yet" detail={canGenerate ? 'Generate options to compare inventory reallocation, expediting, alternative sourcing and split orders.' : 'An authorized operations user can generate proposals for this incident.'}/>}</Panel>) : <Panel title="Recovery queue"><Empty title="No matching recovery work" detail={data.state.incidents.length ? 'Try changing the filters or select an active incident.' : 'Recovery options will appear after delivered evidence creates an incident.'}/></Panel>}
+    <BaselineComparisonPanel />
+  </>;
+}
+
+function BaselineComparisonPanel() {
+  const [report, setReport] = useState<any>(null);
+
+  useEffect(() => {
+    fetch('/api/baseline-comparison', { credentials: 'same-origin' })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (data) setReport(data); })
+      .catch(() => {});
+  }, []);
+
+  if (!report || !report.metrics) return null;
+
+  return (
+    <Panel
+      title="Automated Baseline Comparison"
+      eyebrow="SYNTHETIC BENCHMARK EVALUATION (F4)"
+      action={<Badge value="low" label="Synthetic Evaluation" />}
+    >
+      <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+        {report.summary}
+      </p>
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Evaluation Metric</th>
+              <th style={{ color: '#047857' }}>DisruptionIQ (Hardened)</th>
+              <th style={{ color: '#b45309' }}>ERP-Only Baseline</th>
+              <th style={{ color: '#b91c1c' }}>Last-Write-Wins (LWW)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Injected Conflicts Caught</strong><div className="table-sub">{report.metrics.conflictsCaught.note}</div></td>
+              <td><strong style={{ color: '#047857' }}>{report.metrics.conflictsCaught.disruptionIQ}</strong></td>
+              <td><span>{report.metrics.conflictsCaught.erpOnly}</span></td>
+              <td><span>{report.metrics.conflictsCaught.lastWriteWins}</span></td>
+            </tr>
+            <tr>
+              <td><strong>Duplicate Events Trapped</strong><div className="table-sub">{report.metrics.duplicateEventsTrapped.note}</div></td>
+              <td><strong style={{ color: '#047857' }}>{report.metrics.duplicateEventsTrapped.disruptionIQ}</strong></td>
+              <td><span>{report.metrics.duplicateEventsTrapped.erpOnly}</span></td>
+              <td><span>{report.metrics.duplicateEventsTrapped.lastWriteWins}</span></td>
+            </tr>
+            <tr>
+              <td><strong>Constraint Violations</strong><div className="table-sub">{report.metrics.constraintViolations.note}</div></td>
+              <td><strong style={{ color: '#047857' }}>{report.metrics.constraintViolations.disruptionIQ}</strong></td>
+              <td><span style={{ color: '#b45309' }}>{report.metrics.constraintViolations.erpOnly} violations</span></td>
+              <td><span style={{ color: '#b91c1c' }}>{report.metrics.constraintViolations.lastWriteWins} violations</span></td>
+            </tr>
+            <tr>
+              <td><strong>Wrong Recovery Decisions</strong><div className="table-sub">{report.metrics.wrongDecisions.note}</div></td>
+              <td><strong style={{ color: '#047857' }}>{report.metrics.wrongDecisions.disruptionIQ}</strong></td>
+              <td><span style={{ color: '#b45309' }}>{report.metrics.wrongDecisions.erpOnly} wrong decisions</span></td>
+              <td><span style={{ color: '#b91c1c' }}>{report.metrics.wrongDecisions.lastWriteWins} wrong decisions</span></td>
+            </tr>
+            <tr>
+              <td><strong>Unverified Phantom Stock Allocated</strong><div className="table-sub">{report.metrics.unverifiedStockExposures.note}</div></td>
+              <td><strong style={{ color: '#047857' }}>{report.metrics.unverifiedStockExposures.disruptionIQ}</strong></td>
+              <td><span style={{ color: '#b45309' }}>{report.metrics.unverifiedStockExposures.erpOnly}</span></td>
+              <td><span style={{ color: '#b91c1c' }}>{report.metrics.unverifiedStockExposures.lastWriteWins}</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  );
 }

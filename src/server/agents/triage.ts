@@ -60,6 +60,19 @@ export async function runTriageAgent(input: {
     }
   }
 
+  // Fallback direct table search in PGlite if needed
+  if (targetOrderIds.size === 0) {
+    try {
+      const dbOrders = await input.repo.searchTable('customer_orders', entityId);
+      for (const row of dbOrders) {
+        const order = row.data || row;
+        if (order?.id) targetOrderIds.add(order.id);
+      }
+    } catch {
+      // Graceful fallback
+    }
+  }
+
   const affectedOrders = input.state.orders
     .filter(o => targetOrderIds.has(o.id))
     .map(o => ({

@@ -157,14 +157,30 @@ export async function simulateWhatIfScenario(
     }
   }
 
-  // 5. Evaluate feasible recovery options for simulated shortages
+  // 5. Evaluate feasible recovery options for simulated shortages across the FOUR canonical strategies
   const planner = new DeterministicTemplatePlanner();
   let feasibleRecoveryCount = 0;
   const feasibleOptions: { type: PlanType; costCents: number; arrivesAt: string }[] = [];
 
+  const strategyEvaluations: Record<PlanType, {
+    viable: boolean;
+    candidateCount: number;
+    bestCostCents?: number;
+    bestArrivesAt?: string;
+    reasons: Set<string>;
+  }> = {
+    reallocate: { viable: false, candidateCount: 0, reasons: new Set() },
+    expedite: { viable: false, candidateCount: 0, reasons: new Set() },
+    alternative_supplier: { viable: false, candidateCount: 0, reasons: new Set() },
+    split_order: { viable: false, candidateCount: 0, reasons: new Set() },
+  };
+
   for (const sim of simulatedExposedImpacts) {
     const candidates = planner.generateCandidates(clonedState, '', sim.orderId, sim.shortage);
     for (const c of candidates) {
+      if (strategyEvaluations[c.type]) {
+        strategyEvaluations[c.type].candidateCount++;
+      }
       const evalRes = evaluateCandidateConstraints(clonedState, {
         orderId: sim.orderId,
         type: c.type,
@@ -179,6 +195,16 @@ export async function simulateWhatIfScenario(
           costCents: evalRes.costCents,
           arrivesAt: evalRes.arrivesAt,
         });
+        if (strategyEvaluations[c.type]) {
+          strategyEvaluations[c.type].viable = true;
+          const currentBest = strategyEvaluations[c.type].bestCostCents;
+          if (currentBest === undefined || evalRes.costCents < currentBest) {
+            strategyEvaluations[c.type].bestCostCents = evalRes.costCents;
+            strategyEvaluations[c.type].bestArrivesAt = evalRes.arrivesAt;
+          }
+        }
+      } else if (strategyEvaluations[c.type]) {
+        for (const r of evalRes.reasons) strategyEvaluations[c.type].reasons.add(r);
       }
     }
   }
@@ -189,6 +215,43 @@ export async function simulateWhatIfScenario(
     feasibleOptions.sort((a, b) => a.costCents - b.costCents || a.type.localeCompare(b.type));
     recommendedPlanType = feasibleOptions[0].type;
   }
+
+  const strategyLabels: Record<PlanType, string> = {
+    reallocate: 'Inventory Reallocation',
+    expedite: 'Shipment Expediting',
+    alternative_supplier: 'Alternative Suppliers',
+    split_order: 'Split Orders',
+  };
+
+  const strategyComparison = (['reallocate', 'expedite', 'alternative_supplier', 'split_order'] as PlanType[]).map(type => {
+    const s = strategyEvaluations[type];
+    return {
+      strategy: type,
+      strategyName: strategyLabels[type],
+      feasible: s.viable,
+      candidateCount: s.candidateCount,
+      bestCostCents: s.bestCostCents,
+      bestArrivesAt: s.bestArrivesAt,
+      rejectionReasons: Array.from(s.reasons),
+    };
+  });
+
+  const hasShortage = simulatedExposedImpacts.length > 0 || simulatedTotalShortage > 0;
+  const warning =
+    feasibleRecoveryCount === 0 && hasShortage
+      ? 'WARNING: The four recommended recovery strategies (Inventory Reallocation, Shipment Expediting, Alternative Suppliers, Split Orders) are not working and cannot resolve this disruption.'
+      : undefined;
+
+  const suggestedAlternatives =
+    feasibleRecoveryCount === 0 && hasShortage
+      ? [
+          'Renegotiate customer delivery deadline or request SLA grace window',
+          'Re-sequence factory production schedules to assemble unaffected product lines',
+          'Fast-track emergency qualification of alternate non-tier-1 or spot-market suppliers',
+          'Propose partial shipment fulfillment with remaining units backordered',
+          'Authorize manufacturing overtime / extra shifts to compress assembly cycle',
+        ]
+      : undefined;
 
   return {
     entityType: params.entityType,
@@ -203,5 +266,8 @@ export async function simulateWhatIfScenario(
     newlyBreachedOrders,
     feasibleRecoveryCount,
     recommendedPlanType,
+    strategyComparison,
+    warning,
+    suggestedAlternatives,
   };
 }

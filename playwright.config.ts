@@ -8,7 +8,7 @@ export default defineConfig({
   workers: 1,
   reporter: 'list',
   use: {
-    baseURL: 'http://127.0.0.1:3000',
+    baseURL: 'http://127.0.0.1:3100',
     trace: 'on-first-retry',
   },
   projects: [
@@ -18,13 +18,23 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'bun src/server/index.ts',
-    url: 'http://127.0.0.1:3000/api/dashboard',
-    reuseExistingServer: !process.env.CI,
+    command: 'bun run build && bun src/server/index.ts',
+    url: 'http://127.0.0.1:3100/api/health',
+    reuseExistingServer: false,
     env: {
       DEMO_MODE: 'true',
-      PORT: '3000',
+      DEMO_PASSWORD: 'disruption-demo',
+      PORT: '3100',
+      APP_ORIGIN: 'http://127.0.0.1:3100',
+      DATABASE_MODE: 'pglite',
+      DATABASE_URL: '',
+      PGLITE_PATH: 'memory://',
+      ADMIN_EMAIL: '',
+      ADMIN_PASSWORD: '',
+      AI_FEATURES_ENABLED: 'false',
+      AI_API_KEY: '',
+      GEMINI_API_KEY: '',
     },
-    timeout: 30000,
+    timeout: 60000,
   },
 });

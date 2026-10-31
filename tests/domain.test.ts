@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { createSeedState } from '../src/domain/seed';
-import { DomainError, decidePlan, generatePlans, getImpact, ingestEvent, inspectDocument, replayQueue, resolveDocument, runScenario, setLotDisposition, setTaskStatus } from '../src/domain/engine';
+import { createSeedState } from './fixtures/enterprise';
+import { runScenario } from './fixtures/scenarios';
+import { DomainError, decidePlan, generatePlans, getImpact, ingestEvent, inspectDocument, replayQueue, resolveDocument, setLotDisposition, setTaskStatus } from '../src/domain/engine';
 import { availableShipment } from '../src/domain/impact';
 import type { Actor, EventInput, RecoveryPlan, State } from '../src/shared/types';
 

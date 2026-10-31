@@ -5,7 +5,6 @@ import {
   Bot,
   Box,
   CheckCircle2,
-  Clock,
   GitBranch,
   RefreshCw,
   Send,
@@ -34,9 +33,10 @@ export function mapEntityToPage(entityType: string): Page {
   switch (t) {
     case 'incidents':
     case 'incident':
+      return 'incidents';
     case 'plans':
     case 'plan':
-      return 'incidents';
+      return 'recovery';
     case 'orders':
     case 'order':
       return 'overview';
@@ -262,6 +262,38 @@ export function SimulationDiffView({
         </div>
       </div>
 
+      {diff.warning ? (
+        <div
+          className="simulation-warning-box"
+          style={{
+            padding: '10px 12px',
+            background: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid #ef4444',
+            borderRadius: '6px',
+            margin: '8px 0',
+            fontSize: '12px',
+            color: '#fca5a5',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
+            <AlertTriangle size={14} className="danger-text" />
+            <span>{diff.warning}</span>
+          </div>
+          {diff.suggestedAlternatives && diff.suggestedAlternatives.length > 0 ? (
+            <div style={{ marginTop: '8px' }}>
+              <div style={{ fontWeight: 600, color: '#fecaca', marginBottom: '4px' }}>
+                Suggested Alternative Solutions:
+              </div>
+              <ul style={{ paddingLeft: '18px', margin: 0 }}>
+                {diff.suggestedAlternatives.map((alt, idx) => (
+                  <li key={idx} style={{ marginBottom: '2px' }}>{alt}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="simulation-recovery-summary">
         <div className="recovery-count">
           <strong>{diff.feasibleRecoveryCount}</strong> feasible recovery option{diff.feasibleRecoveryCount === 1 ? '' : 's'}
@@ -270,8 +302,45 @@ export function SimulationDiffView({
           <span className="badge badge-recommended">
             Recommended: {diff.recommendedPlanType.replaceAll('_', ' ')}
           </span>
+        ) : diff.feasibleRecoveryCount === 0 ? (
+          <span className="badge badge-danger">
+            4 Strategies Infeasible
+          </span>
         ) : null}
       </div>
+
+      {diff.strategyComparison && diff.strategyComparison.length > 0 ? (
+        <div
+          className="strategy-comparison-chips"
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '4px',
+            margin: '6px 0',
+          }}
+        >
+          {diff.strategyComparison.map(sc => (
+            <span
+              key={sc.strategy}
+              style={{
+                fontSize: '11px',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                background: sc.feasible ? 'rgba(34, 197, 94, 0.15)' : 'rgba(148, 163, 184, 0.1)',
+                color: sc.feasible ? '#4ade80' : '#94a3b8',
+                border: sc.feasible ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(148, 163, 184, 0.2)',
+              }}
+              title={
+                sc.feasible
+                  ? `Viable (${sc.candidateCount} options)`
+                  : `Infeasible: ${sc.rejectionReasons.join(', ') || 'No qualifying candidates'}`
+              }
+            >
+              {sc.strategyName}: {sc.feasible ? '✓ Viable' : '✗ Infeasible'}
+            </span>
+          ))}
+        </div>
+      ) : null}
 
       {diff.newlyBreachedOrders.length > 0 ? (
         <div className="simulation-breached-orders">
@@ -309,8 +378,8 @@ export function SimulationDiffView({
 }
 
 const QUICK_PROMPTS = [
-  'What if shipment-atlas is delayed 24h?',
-  'Show high-risk orders with < 12h remaining',
+  'Show current shipments and their latest ETAs',
+  'Show orders nearing their deadlines',
   'What recovery options exist for the active incident?',
 ];
 
@@ -334,6 +403,7 @@ export function AiCopilotDrawer({
   const pageLabels: Record<Page, string> = {
     overview: 'Overview',
     incidents: 'Incidents',
+    recovery: 'Recovery',
     network: 'Network',
     inventory: 'Inventory',
     evidence: 'Evidence',
@@ -346,13 +416,15 @@ export function AiCopilotDrawer({
     : `Context: ${pageLabels[activePage] || activePage}`;
 
   const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const container = messagesEndRef.current?.parentElement;
+    if (container) container.scrollTop = container.scrollHeight;
   }, []);
 
   useEffect(() => {
     if (isOpen) {
       scrollToBottom();
-      setTimeout(() => inputRef.current?.focus(), 150);
+      const timer = setTimeout(() => inputRef.current?.focus(), 150);
+      return () => clearTimeout(timer);
     }
   }, [isOpen, messages.length, loading, scrollToBottom]);
 
@@ -428,8 +500,7 @@ export function AiCopilotDrawer({
     <div className="copilot-drawer-backdrop" onClick={onClose} role="presentation">
       <aside
         className="copilot-drawer"
-        role="dialog"
-        aria-modal="true"
+        role="complementary"
         aria-label="DisruptionIQ Copilot"
         onClick={e => e.stopPropagation()}
       >
@@ -440,7 +511,7 @@ export function AiCopilotDrawer({
               <Sparkles size={18} className="copilot-sparkle-icon" />
             </div>
             <div className="copilot-header-titles">
-              <h2 className="copilot-title">DisruptionIQ Copilot</h2>
+              <h2 className="copilot-title">Your AI assistant</h2>
               <span className="copilot-context-pill" title={contextLabel}>
                 {contextLabel}
               </span>
@@ -576,7 +647,8 @@ export function AiCopilotDrawer({
             className="copilot-text-input"
             value={input}
             onChange={e => setInput(e.target.value)}
-            placeholder="Ask about disruptions, what-if scenarios, recovery…"
+            placeholder="Ask about your supply chain…"
+            aria-label="Message your AI assistant"
             disabled={loading}
           />
           <button

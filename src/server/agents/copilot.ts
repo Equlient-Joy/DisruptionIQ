@@ -4,21 +4,14 @@ import type {
   AgentExecutionLog,
   ChatMessage,
   Incident,
-  Lot,
-  Order,
-  PlanType,
   RawEvent,
   RecoveryPlan,
-  Shipment,
   SimulationDiff,
   State,
-  Supplier,
-  Warehouse,
 } from '../../shared/types';
 import type { Repository } from '../repository';
 import { upstreamPaths } from '../../domain/common';
 import { getImpact } from '../../domain/impact';
-import { DeterministicTemplatePlanner, evaluateCandidateConstraints } from '../../domain/plans';
 import { callAgentLLM } from './llm';
 import { simulateWhatIfScenario, type WhatIfParams } from './simulation';
 
@@ -453,13 +446,16 @@ function detectIntent(message: string, currentContext: CopilotChatRequest['curre
   }
 
   // 5. Query Entities Intent
-  if (/\b(list|show|view|find|query|all)\s+(orders?|shipments?|lots?|suppliers?|warehouses?|tasks?)\b/i.test(lower)) {
-    if (/\border/i.test(lower)) return { kind: 'query_entities', queryType: 'orders' };
-    if (/\bshipment/i.test(lower)) return { kind: 'query_entities', queryType: 'shipments' };
-    if (/\blot/i.test(lower)) return { kind: 'query_entities', queryType: 'lots' };
-    if (/\bsupplier/i.test(lower)) return { kind: 'query_entities', queryType: 'suppliers' };
-    if (/\bwarehouse/i.test(lower)) return { kind: 'query_entities', queryType: 'warehouses' };
-    if (/\btask/i.test(lower)) return { kind: 'query_entities', queryType: 'tasks' };
+  if (
+    /\b(list|show|view|find|query|all|who|what|which|how\s+many|check|get|describe|status\s+of)\b/i.test(lower) ||
+    /\b(orders?|shipments?|lots?|suppliers?|warehouses?|tasks?|inventory)\b/i.test(lower)
+  ) {
+    if (/\b(orders?)\b/i.test(lower)) return { kind: 'query_entities', queryType: 'orders' };
+    if (/\b(shipments?)\b/i.test(lower)) return { kind: 'query_entities', queryType: 'shipments' };
+    if (/\b(lots?|inventory|stock)\b/i.test(lower)) return { kind: 'query_entities', queryType: 'lots' };
+    if (/\b(suppliers?|vendors?)\b/i.test(lower)) return { kind: 'query_entities', queryType: 'suppliers' };
+    if (/\b(warehouses?|hubs?)\b/i.test(lower)) return { kind: 'query_entities', queryType: 'warehouses' };
+    if (/\b(tasks?|action\s+items?)\b/i.test(lower)) return { kind: 'query_entities', queryType: 'tasks' };
   }
 
   return { kind: 'general' };
@@ -546,14 +542,35 @@ export async function handleCopilotChat(
       accessedEntities.add(o.orderId);
     }
 
+    let recoverySection = '';
+    if (diff.feasibleRecoveryCount > 0 && diff.recommendedPlanType) {
+      recoverySection =
+        `• **Feasible Recovery Options**: ${diff.feasibleRecoveryCount} candidate path(s) verified on-time\n` +
+        `• **Recommended Strategy**: \`${diff.recommendedPlanType}\`\n\n`;
+    } else if (diff.warning) {
+      recoverySection =
+        `• **Feasible Recovery Options**: 0 viable paths\n` +
+        `• **Recommended Strategy**: None viable\n\n` +
+        `> [!WARNING]\n` +
+        `> **${diff.warning}**\n\n` +
+        `**Suggested Alternative Solutions**:\n` +
+        (diff.suggestedAlternatives || [])
+          .map((alt, idx) => `  ${idx + 1}. ${alt}`)
+          .join('\n') +
+        `\n\n`;
+    } else {
+      recoverySection =
+        `• **Feasible Recovery Options**: ${diff.feasibleRecoveryCount} candidate path(s)\n` +
+        `• **Recommended Plan Type**: None required\n\n`;
+    }
+
     replyContent =
       `### What-If Simulation Results: ${diff.scenarioDescription}\n\n` +
       `• **Exposed Orders**: Baseline ${diff.baselineExposedOrders} → Simulated ${diff.simulatedExposedOrders} ` +
       `(${diff.deltaExposedOrders >= 0 ? `+${diff.deltaExposedOrders}` : diff.deltaExposedOrders})\n` +
       `• **Total Demand Shortage**: Baseline ${diff.baselineTotalShortage} units → Simulated ${diff.simulatedTotalShortage} units ` +
       `(${diff.deltaShortage >= 0 ? `+${diff.deltaShortage}` : diff.deltaShortage})\n` +
-      `• **Feasible Recovery Options**: ${diff.feasibleRecoveryCount} candidate path(s) verified on-time\n` +
-      `• **Recommended Plan Type**: ${diff.recommendedPlanType ? `\`${diff.recommendedPlanType}\`` : 'None feasible'}\n\n` +
+      recoverySection +
       `**Newly Breached Orders**:\n${breachSummary}${roleCommentary}`;
 
     // Attach Action Card if feasible options exist
@@ -565,6 +582,23 @@ export async function handleCopilotChat(
           detail: `Simulation demonstrates ${diff.feasibleRecoveryCount} feasible recovery path(s). Recommended resolution type: ${diff.recommendedPlanType}.`,
           risk: 'routine',
           buttonLabel: `Explore ${diff.recommendedPlanType}`,
+        }),
+      ];
+    } else if (diff.warning) {
+      actionCards = [
+        runProposeRecoveryActionTool({
+          cardType: 'filter_prompt',
+          title: 'Renegotiate Customer SLA',
+          detail: 'The 4 standard recovery strategies cannot resolve shortage. Review customer contract delivery grace terms.',
+          risk: 'high',
+          buttonLabel: 'Review Customer SLA',
+        }),
+        runProposeRecoveryActionTool({
+          cardType: 'filter_prompt',
+          title: 'Emergency Sourcing Review',
+          detail: 'Explore unapproved or secondary suppliers beyond standard tier-1 catalog.',
+          risk: 'high',
+          buttonLabel: 'Find Alternate Sources',
         }),
       ];
     }
@@ -640,29 +674,66 @@ export async function handleCopilotChat(
     const openImpacts = actor.orgId === 'focal' ? getImpact(state).filter(i => i.shortage > 0) : [];
 
     if (plans.length > 0) {
-      const p = plans[0];
-      accessedEntities.add(p.id);
-      accessedEntities.add(p.incidentId);
-      accessedEntities.add(p.orderId);
+      const feasiblePlans = plans.filter(p => p.feasible);
 
-      replyContent =
-        `A recovery option is available for incident ${p.incidentId}: ` +
-        `**Plan ${p.id}** (${p.type}) for order ${p.orderId}. ` +
-        `Quantity: ${p.quantity} units, arrives at ${p.arrivesAt}, cost: $${(p.costCents / 100).toFixed(2)}. ` +
-        `Status: \`${p.status}\`, Risk Level: \`${p.riskLevel || 'routine'}\`.`;
+      if (feasiblePlans.length > 0) {
+        const p = feasiblePlans[0];
+        accessedEntities.add(p.id);
+        accessedEntities.add(p.incidentId);
+        accessedEntities.add(p.orderId);
 
-      actionCards = [
-        runProposeRecoveryActionTool({
-          cardType: 'plan_action_prompt',
-          title: `Authorize Recovery Plan ${p.id}`,
-          detail: `${p.type.toUpperCase()}: ${p.quantity} units for order ${p.orderId}. Feasible: ${p.feasible}.`,
-          risk: p.riskLevel || 'routine',
-          cost: p.costCents,
-          planId: p.id,
-          incidentId: p.incidentId,
-          buttonLabel: 'Authorize Plan',
-        }),
-      ];
+        replyContent =
+          `A feasible recovery option is available for incident ${p.incidentId}: ` +
+          `**Plan ${p.id}** (${p.type}) for order ${p.orderId}. ` +
+          `Quantity: ${p.quantity} units, arrives at ${p.arrivesAt}, cost: $${(p.costCents / 100).toFixed(2)}. ` +
+          `Status: \`${p.status}\`, Risk Level: \`${p.riskLevel || 'routine'}\`.`;
+
+        actionCards = [
+          runProposeRecoveryActionTool({
+            cardType: 'plan_action_prompt',
+            title: `Authorize Recovery Plan ${p.id}`,
+            detail: `${p.type.toUpperCase()}: ${p.quantity} units for order ${p.orderId}. Feasible: ${p.feasible}.`,
+            risk: p.riskLevel || 'routine',
+            cost: p.costCents,
+            planId: p.id,
+            incidentId: p.incidentId,
+            buttonLabel: 'Authorize Plan',
+          }),
+        ];
+      } else {
+        // Plans exist but none of the 4 standard strategies are viable
+        const p = plans[0];
+        accessedEntities.add(p.id);
+        accessedEntities.add(p.incidentId);
+
+        replyContent =
+          `> [!WARNING]\n` +
+          `> **WARNING: The four recommended recovery strategies (Inventory Reallocation, Shipment Expediting, Alternative Suppliers, Split Orders) are not working and cannot resolve this disruption.**\n\n` +
+          `All ${plans.length} candidate recovery plan(s) evaluated across the 4 standard strategies failed operational constraints.\n\n` +
+          `**Suggested Alternative Solutions**:\n` +
+          `1. Renegotiate customer delivery deadline or request SLA grace window extension.\n` +
+          `2. Re-sequence factory production schedules to assemble products not dependent on the disrupted component.\n` +
+          `3. Fast-track emergency qualification of alternate non-tier-1 or spot-market suppliers.\n` +
+          `4. Propose partial shipment fulfillment with remaining units backordered.\n` +
+          `5. Authorize manufacturing overtime / extra shifts to compress assembly cycle.`;
+
+        actionCards = [
+          runProposeRecoveryActionTool({
+            cardType: 'filter_prompt',
+            title: 'Renegotiate Customer SLA',
+            detail: 'The 4 standard recovery strategies cannot resolve shortage. Review customer contract delivery grace terms.',
+            risk: 'high',
+            buttonLabel: 'Review Customer SLA',
+          }),
+          runProposeRecoveryActionTool({
+            cardType: 'filter_prompt',
+            title: 'Emergency Sourcing Review',
+            detail: 'Explore unapproved or secondary suppliers beyond standard tier-1 catalog.',
+            risk: 'high',
+            buttonLabel: 'Find Alternate Sources',
+          }),
+        ];
+      }
     } else if (openImpacts.length > 0) {
       const top = openImpacts[0];
       accessedEntities.add(top.orderId);
@@ -692,20 +763,53 @@ export async function handleCopilotChat(
   else if (intent.kind === 'query_entities' && intent.queryType) {
     try {
       const items = runQueryEntitiesTool(state, actor, { entityType: intent.queryType });
-      const sample = items.slice(0, 5);
-      for (const item of sample) {
+      for (const item of items) {
         if (typeof item.id === 'string') accessedEntities.add(item.id);
       }
 
-      const formattedSample = sample
-        .map(item => `• **${item.id || 'Item'}**: ${JSON.stringify(item)}`)
-        .join('\n');
+      let formattedList = '';
+      if (intent.queryType === 'suppliers') {
+        formattedList = (items as any[])
+          .slice(0, 10)
+          .map(s => `• **${s.name || s.id}** ([${s.id}](app://suppliers/${s.id})): Tier ${s.tier ?? 1}, Lead time: ${s.leadHours ? `${s.leadHours}h` : 'std'}, Commitments: ${(s.commitments || []).length}`)
+          .join('\n');
+      } else if (intent.queryType === 'warehouses') {
+        formattedList = (items as any[])
+          .slice(0, 10)
+          .map(w => `• **${w.name || w.id}** ([${w.id}](app://warehouses/${w.id})): Capacity ${(w.capacity || 0).toLocaleString()} units`)
+          .join('\n');
+      } else if (intent.queryType === 'lots') {
+        formattedList = (items as any[])
+          .slice(0, 10)
+          .map(l => `• **Lot [${l.id}](app://lots/${l.id})**: ${l.quantity} units of \`${l.itemId}\` at [${l.warehouseId}](app://warehouses/${l.warehouseId}) (Available: ${Math.max(0, l.quantity - (l.reserved || 0))}, Reserved: ${l.reserved || 0}, Status: \`${l.status}\`)`)
+          .join('\n');
+      } else if (intent.queryType === 'shipments') {
+        formattedList = (items as any[])
+          .slice(0, 10)
+          .map(s => `• **Shipment [${s.id}](app://shipments/${s.id})**: ${s.quantity} units of \`${s.itemId}\` from [${s.supplierId}](app://suppliers/${s.supplierId}) to [${s.warehouseId}](app://warehouses/${s.warehouseId}) (ETA: ${s.eta}, Status: \`${s.status}\`)`)
+          .join('\n');
+      } else if (intent.queryType === 'orders') {
+        formattedList = (items as any[])
+          .slice(0, 10)
+          .map(o => `• **Order [${o.id}](app://orders/${o.id})** (${o.customer}): ${o.quantity} units of \`${o.itemId}\` (Fulfilled: ${o.fulfilled || 0}, Deadline: ${o.deadline}, Priority: \`${o.priority}\`)`)
+          .join('\n');
+      } else if (intent.queryType === 'tasks') {
+        formattedList = (items as any[])
+          .slice(0, 10)
+          .map(t => `• **Task [${t.id}](app://collaboration/${t.id})**: ${t.title} (Status: \`${t.status}\`, Org: ${t.orgId})`)
+          .join('\n');
+      } else {
+        const sample = items.slice(0, 5);
+        formattedList = sample
+          .map(item => `• **${item.id || 'Item'}**: ${JSON.stringify(item)}`)
+          .join('\n');
+      }
 
       replyContent =
-        `Found ${items.length} ${intent.queryType} matching your permissions:\n\n` +
-        `${formattedSample}${items.length > 5 ? `\n...and ${items.length - 5} more.` : ''}`;
+        `Found **${items.length} ${intent.queryType}** in PGlite matching your permissions:\n\n` +
+        `${formattedList}${items.length > 10 ? `\n...and ${items.length - 10} more records in database.` : ''}`;
 
-      summary = `Queried ${intent.queryType}: ${items.length} records returned.`;
+      summary = `Queried PGlite ${intent.queryType}: ${items.length} records retrieved.`;
     } catch (err) {
       replyContent = (err as Error).message;
       summary = `Query error: ${(err as Error).message}`;
@@ -720,21 +824,108 @@ export async function handleCopilotChat(
     const sharedIncidents = state.incidents.filter(i => isPartner ? i.memberOrgIds.includes(actor.orgId) : true);
     for (const inc of sharedIncidents) accessedEntities.add(inc.id);
 
-    replyContent =
-      `Hello ${actor.name}. You are currently connected to DisruptionIQ as **${actor.role.toUpperCase()}** (${actor.orgId}).\n\n` +
-      `Workspace Status Overview:\n` +
-      `• **Active Incidents**: ${sharedIncidents.length} incident(s) visible\n` +
-      `• **Simulation Clock**: ${state.clock}\n` +
-      `• **Integration Status**: ${state.integrationOutage ? 'Outage active (events queued)' : 'All feeds online'}\n\n` +
-      `You can ask me to run What-If simulations (e.g. *"What if shipment-atlas is delayed by 24 hours?"*), inspect incident root cause (e.g. *"Tell me about the active incident"*), or query operational entities.`;
+    const partnerSupplierIds = new Set(state.suppliers.filter(s => s.orgId === actor.orgId).map(s => s.id));
+    const visibleSuppliers = isPartner ? state.suppliers.filter(s => s.orgId === actor.orgId) : state.suppliers;
+    const visibleWarehouses = isPartner ? [] : state.warehouses;
+    const visibleLots = isPartner ? [] : state.lots;
+    const visibleShipments = isPartner ? state.shipments.filter(s => partnerSupplierIds.has(s.supplierId)) : state.shipments;
+    const visibleOrders = isPartner ? [] : state.orders;
 
-    summary = `General status overview provided to ${actor.role} (${actor.orgId}).`;
+    for (const s of visibleSuppliers) accessedEntities.add(s.id);
+    for (const w of visibleWarehouses) accessedEntities.add(w.id);
+    for (const s of visibleShipments) accessedEntities.add(s.id);
+
+    // Also search PGlite for any mentioned entity IDs or search terms
+    const mentionedIds = [
+      ...(req.message.match(/\b(?:ORD|order)-[\w-]+/gi) || []),
+      ...(req.message.match(/\b(?:SHP|shipment)-[\w-]+/gi) || []),
+      ...(req.message.match(/\b(?:LOT|lot)-[\w-]+/gi) || []),
+      ...(req.message.match(/\b(?:SUP|supplier)-[\w-]+/gi) || []),
+      ...(req.message.match(/\b(?:WH|warehouse)-[\w-]+/gi) || []),
+      ...(req.message.match(/\b(?:INC|incident|scenario)-[\w-]+/gi) || []),
+    ];
+
+    for (const mid of mentionedIds) {
+      accessedEntities.add(mid);
+    }
+
+    const searchMatch = req.message.match(/\b(?:search|find)\s+(?:for\s+)?["']?([A-Za-z0-9_-]+)["']?/i);
+    const searchTerms = [
+      ...mentionedIds,
+      ...(searchMatch && searchMatch[1] && !['the', 'our', 'all', 'any', 'database'].includes(searchMatch[1].trim().toLowerCase()) ? [searchMatch[1].trim()] : []),
+    ];
+
+    const pgliteSearchResults: Record<string, any[]> = {};
+    for (const term of searchTerms) {
+      if (term.length > 1) {
+        try {
+          const results = await repo.searchAllTables(term, 3);
+          for (const [tbl, rows] of Object.entries(results)) {
+            if (!pgliteSearchResults[tbl]) pgliteSearchResults[tbl] = [];
+            pgliteSearchResults[tbl].push(...rows);
+            for (const r of rows) {
+              if (r.id) accessedEntities.add(r.id);
+            }
+          }
+        } catch {
+          // Graceful fallback
+        }
+      }
+    }
+
+    let searchSection = '';
+    const matchingTables = Object.keys(pgliteSearchResults);
+    if (matchingTables.length > 0) {
+      searchSection =
+        `\n\n**PGlite Database Search Matches**:\n` +
+        matchingTables
+          .map(tbl => `• **Table \`${tbl}\`**: ${pgliteSearchResults[tbl].map(r => r.id || r.name || r.itemId || 'match').slice(0, 3).join(', ')}`)
+          .join('\n');
+    }
+
+    const totalStock = visibleLots.reduce((acc, l) => acc + (l.quantity || 0), 0);
+    const reservedStock = visibleLots.reduce((acc, l) => acc + (l.reserved || 0), 0);
+    const availableStock = Math.max(0, totalStock - reservedStock);
+    const openShortages = isPartner ? 0 : getImpact(state).filter(i => i.shortage > 0).length;
+
+    replyContent =
+      `Hello ${actor.name}. You are connected as **${actor.role.toUpperCase()}** (${actor.orgId}).\n\n` +
+      `**PGlite Live Database Status** (Clock: ${state.clock}):\n` +
+      `• **Suppliers**: ${visibleSuppliers.length} active registered supplier(s)\n` +
+      (!isPartner ? `• **Warehouses**: ${visibleWarehouses.length} hub(s) monitored\n` : '') +
+      (!isPartner ? `• **Inventory**: ${visibleLots.length} lot(s) with ${totalStock.toLocaleString()} total units (${availableStock.toLocaleString()} available, ${reservedStock.toLocaleString()} reserved)\n` : '') +
+      `• **Shipments**: ${visibleShipments.length} shipment(s) tracked in transit/scheduled\n` +
+      (!isPartner ? `• **Customer Orders**: ${visibleOrders.length} order(s) (${openShortages} with open shortage risk)\n` : '') +
+      `• **Active Incidents**: ${sharedIncidents.length} incident(s) visible\n` +
+      `• **Integration Feeds**: ${state.integrationOutage ? 'Outage active (events queued)' : 'All feeds operational'}` +
+      `${searchSection}\n\n` +
+      `You can ask me to inspect any supplier, warehouse inventory, order deadlines, simulate shipment delays, or investigate incident root causes.`;
+
+    summary = `PGlite status overview (${visibleSuppliers.length} suppliers, ${visibleLots.length} lots, ${visibleShipments.length} shipments, ${sharedIncidents.length} incidents) provided to ${actor.role} (${actor.orgId}).`;
   }
 
   // ---------------------------------------------------------
   // Grounded LLM Enhancement (if configured)
   // ---------------------------------------------------------
-  const systemPrompt = buildPersonaInstructions(actor);
+  const isPartner = actor.orgId !== 'focal';
+  const partnerSupplierIds = new Set(state.suppliers.filter(s => s.orgId === actor.orgId).map(s => s.id));
+  const visibleSuppliers = isPartner ? state.suppliers.filter(s => s.orgId === actor.orgId) : state.suppliers;
+  const visibleWarehouses = isPartner ? [] : state.warehouses;
+  const visibleLots = isPartner ? [] : state.lots;
+  const visibleShipments = isPartner ? state.shipments.filter(s => partnerSupplierIds.has(s.supplierId)) : state.shipments;
+  const visibleOrders = isPartner ? [] : state.orders;
+  const visibleTasks = isPartner ? state.tasks.filter(t => t.orgId === actor.orgId) : state.tasks;
+  const sharedIncidents = state.incidents.filter(i => isPartner ? i.memberOrgIds.includes(actor.orgId) : true);
+
+  const systemPrompt =
+    `${buildPersonaInstructions(actor)}\n\n` +
+    `CRITICAL AI GROUNDING RULES:\n` +
+    `- You MUST answer the user's inquiry using the real PGlite supply chain records provided in the user prompt.\n` +
+    `- State exact names, quantities, dates, statuses, and numbers directly from the retrieved database records.\n` +
+    `- Always format entity IDs with deep links: [Entity-ID](app://type/Entity-ID), e.g. [SUP-01](app://suppliers/SUP-01), [SHP-01](app://shipments/SHP-01), [ORD-101](app://orders/ORD-101), [WH-01](app://warehouses/WH-01), [LOT-01](app://lots/LOT-01), [INC-01](app://incidents/INC-01).\n` +
+    `- Never invent fictional inventory, shipments, or suppliers.\n` +
+    `- If the user asks a specific question about an entity, table, or status, provide a direct, insightful, and comprehensive operational answer.`;
+
   const llmRes = await callAgentLLM({
     systemPrompt,
     userPrompt: JSON.stringify({
@@ -742,6 +933,15 @@ export async function handleCopilotChat(
       chatHistory: req.history ? req.history.slice(-3) : [],
       currentContext: req.currentContext,
       intentDetected: intent.kind,
+      retrievedDatabaseContext: {
+        suppliers: visibleSuppliers.slice(0, 15).map(s => ({ id: s.id, name: s.name, tier: s.tier, leadHours: s.leadHours, commitments: (s.commitments || []).length })),
+        warehouses: visibleWarehouses.slice(0, 10).map(w => ({ id: w.id, name: w.name, capacity: w.capacity })),
+        inventoryLots: visibleLots.slice(0, 20).map(l => ({ id: l.id, itemId: l.itemId, warehouseId: l.warehouseId, quantity: l.quantity, reserved: l.reserved, status: l.status })),
+        shipments: visibleShipments.slice(0, 20).map(s => ({ id: s.id, supplierId: s.supplierId, warehouseId: s.warehouseId, itemId: s.itemId, quantity: s.quantity, eta: s.eta, status: s.status })),
+        customerOrders: visibleOrders.slice(0, 20).map(o => ({ id: o.id, customer: o.customer, itemId: o.itemId, quantity: o.quantity, fulfilled: o.fulfilled, deadline: o.deadline, priority: o.priority, status: o.status })),
+        activeIncidents: sharedIncidents.slice(0, 10).map(i => ({ id: i.id, title: i.title, status: i.status, entityId: i.entityId, affectedOrderIds: i.affectedOrderIds })),
+        tasks: visibleTasks.slice(0, 10).map(t => ({ id: t.id, title: t.title, status: t.status, orgId: t.orgId })),
+      },
       deterministicFactBase: replyContent,
       simulationResult,
     }),

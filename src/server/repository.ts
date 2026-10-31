@@ -7,8 +7,8 @@ import { readFile } from 'node:fs/promises';
 import { mkdirSync } from 'node:fs';
 import * as schema from './schema';
 import type { Actor, State, AgentType, AgentFeature, AgentExecutionLog } from '../shared/types';
-import { agentBus } from './agents/bus';
-import { createEmptyState, createSeedState } from '../domain/seed';
+import { AgentEventBus } from './agents/bus';
+import { createEmptyState } from '../domain/seed';
 import { normalizeState } from '../domain/normalize';
 import { integrationForEvent } from '../domain/events';
 import { demoActors, hashPassword, tokenHash, verifyPassword } from './auth';
@@ -35,6 +35,7 @@ function safeParseJsonArray(val: unknown): string[] {
 
 type Database = ReturnType<typeof drizzleLite>;
 export class Repository {
+  readonly agentBus = new AgentEventBus();
   readonly mode: string;
   readonly documentStorage: DocumentStorage;
   private db: Database;
@@ -50,9 +51,11 @@ export class Repository {
       this.closeConnection = () => client.end();
       this.migration = async () => client.unsafe(await readFile(new URL('./migration.sql', import.meta.url), 'utf8'));
     } else {
-      if (options.pglitePath) mkdirSync(options.pglitePath, { recursive: true });
-      const client = new PGlite(options.pglitePath);
-      this.db = drizzleLite(client); this.mode = options.pglitePath ? 'PostgreSQL · embedded local' : 'PostgreSQL · isolated test';
+      const isMemory = !options.pglitePath || options.pglitePath.startsWith('memory');
+      const pgliteDir = isMemory ? undefined : options.pglitePath;
+      if (pgliteDir) mkdirSync(pgliteDir, { recursive: true });
+      const client = new PGlite(pgliteDir);
+      this.db = drizzleLite(client); this.mode = pgliteDir ? 'PostgreSQL · embedded local' : 'PostgreSQL · isolated test';
       this.closeConnection = () => client.close();
       this.migration = async () => client.exec(await readFile(new URL('./migration.sql', import.meta.url), 'utf8'));
     }
@@ -113,6 +116,7 @@ export class Repository {
     const lotIds = state.lots.map(l => l.id);
     const shipmentIds = state.shipments.map(s => s.id);
     const supplierIds = state.suppliers.map(s => s.id);
+    const commitmentIds = state.suppliers.flatMap(s => (s.commitments || []).map(c => `${s.id}:${c.itemId}`));
     const warehouseIds = state.warehouses.map(w => w.id);
 
     if (lineIds.length === 0) await tx.delete(schema.orderLines);
@@ -127,13 +131,22 @@ export class Repository {
     if (shipmentIds.length === 0) await tx.delete(schema.shipments);
     else await tx.delete(schema.shipments).where(notInArray(schema.shipments.id, shipmentIds));
 
+    if (commitmentIds.length === 0) await tx.delete(schema.supplierCommitments);
+    else await tx.delete(schema.supplierCommitments).where(notInArray(schema.supplierCommitments.id, commitmentIds));
+
     if (supplierIds.length === 0) await tx.delete(schema.suppliers);
     else await tx.delete(schema.suppliers).where(notInArray(schema.suppliers.id, supplierIds));
 
     if (warehouseIds.length === 0) await tx.delete(schema.warehouses);
     else await tx.delete(schema.warehouses).where(notInArray(schema.warehouses.id, warehouseIds));
 
-    for (const s of state.suppliers) await tx.insert(schema.suppliers).values({id:s.id,workspaceId:'focal',name:s.name,data:s}).onConflictDoUpdate({target:schema.suppliers.id,set:{name:s.name,data:s}});
+    for (const s of state.suppliers) {
+      await tx.insert(schema.suppliers).values({id:s.id,workspaceId:'focal',name:s.name,tier:s.tier,data:s}).onConflictDoUpdate({target:schema.suppliers.id,set:{name:s.name,tier:s.tier,data:s}});
+      for (const c of s.commitments || []) {
+        const fields = { id: `${s.id}:${c.itemId}`, workspaceId: 'focal', supplierId: s.id, itemId: c.itemId, expectedQuantity: c.expectedQuantity, confirmedQuantity: c.confirmedQuantity, dueAt: new Date(c.dueAt), status: c.status, updatedAt: new Date(c.updatedAt) };
+        await tx.insert(schema.supplierCommitments).values(fields).onConflictDoUpdate({target:schema.supplierCommitments.id,set:fields});
+      }
+    }
     for (const w of state.warehouses) await tx.insert(schema.warehouses).values({id:w.id,workspaceId:'focal',name:w.name,capacity:w.capacity,data:w}).onConflictDoUpdate({target:schema.warehouses.id,set:{name:w.name,capacity:w.capacity,data:w}});
     for (const s of state.shipments) {
       const fields={id:s.id,workspaceId:'focal',supplierId:s.supplierId,warehouseId:s.warehouseId,quantity:s.quantity,eta:new Date(s.eta),data:s};
@@ -255,7 +268,9 @@ export class Repository {
     return { items, nextCursor, hasMore, total: count ?? 0 };
   }
 
-  async processDocument(documentId: string, jobId: string): Promise<void> {
+  async processDocument(documentId: string, jobId: string, expectedGeneration: number): Promise<void> {
+    const initial = await this.read();
+    if ((initial.workspaceGeneration ?? 1) !== expectedGeneration || !initial.documents.some(d => d.id === documentId)) return;
     await this.db.update(schema.documentJobs).set({
       status: 'processing',
       updatedAt: new Date(),
@@ -314,34 +329,17 @@ export class Repository {
         updatedAt: new Date(),
       }).where(eq(schema.documentJobs.id, jobId));
 
-      await this.mutate(s => {
-        let claim = s.documents.find(d => d.id === documentId);
-        if (!claim) {
-          claim = {
-            id: documentId,
-            filename: docRecord.filename,
-            fileSizeBytes: docRecord.fileSizeBytes,
-            pageCount: pages.length,
-            excerpt,
-            fields,
-            confidence,
-            status,
-            issues,
-            source,
-            uploadedAt: s.clock,
-            processedAt: s.clock,
-          };
-          s.documents.push(claim);
-        } else {
-          claim.pageCount = pages.length;
-          claim.excerpt = excerpt;
-          claim.fields = fields;
-          claim.confidence = confidence;
-          claim.status = status;
-          claim.issues = issues;
-          claim.source = source;
-          claim.processedAt = s.clock;
-        }
+      const applied = await this.mutate(s => {
+        const claim = s.documents.find(d => d.id === documentId);
+        if ((s.workspaceGeneration ?? 1) !== expectedGeneration || !claim) return false;
+        claim.pageCount = pages.length;
+        claim.excerpt = excerpt;
+        claim.fields = fields;
+        claim.confidence = confidence;
+        claim.status = status;
+        claim.issues = issues;
+        claim.source = source;
+        claim.processedAt = s.clock;
         if (status !== 'matched') {
           s.notifications.push({
             id: `notif-${crypto.randomUUID()}`,
@@ -351,10 +349,13 @@ export class Repository {
             orgId: 'focal',
           });
         }
+        return true;
       });
 
+      if (!applied) return;
       const s = await this.read();
-      agentBus.publish('document:extracted', {
+      if ((s.workspaceGeneration ?? 1) !== expectedGeneration || !s.documents.some(d=>d.id===documentId)) return;
+      this.agentBus.publish('document:extracted', {
         documentId,
         chunks: chunks.map(c => ({
           documentId,
@@ -379,6 +380,7 @@ export class Repository {
         updatedAt: new Date(),
       }).where(eq(schema.documentJobs.id, jobId));
       await this.mutate(s => {
+        if ((s.workspaceGeneration ?? 1) !== expectedGeneration) return;
         const claim = s.documents.find(d => d.id === documentId);
         if (claim) {
           claim.status = 'failed';
@@ -442,6 +444,59 @@ export class Repository {
     }
   }
 
+  async getAllTableNames(): Promise<string[]> {
+    return [
+      'workspaces',
+      'app_users',
+      'app_sessions',
+      'suppliers',
+      'warehouses',
+      'shipments',
+      'inventory_lots',
+      'customer_orders',
+      'order_lines',
+      'integration_connections',
+      'integration_inbox',
+      'document_records',
+      'document_files',
+      'document_jobs',
+      'document_chunks',
+      'agent_execution_logs',
+    ];
+  }
+
+  async searchTable(tableName: string, searchTerm?: string, limit = 50): Promise<any[]> {
+    const validTables = await this.getAllTableNames();
+    if (!validTables.includes(tableName)) {
+      throw new Error(`Unknown table: ${tableName}`);
+    }
+    const safeLimit = Math.max(1, Math.min(limit, 200));
+    if (!searchTerm || !searchTerm.trim()) {
+      const res = await (this.db as any).execute(sql.raw(`SELECT * FROM ${tableName} LIMIT ${safeLimit}`));
+      return (res.rows || res) as any[];
+    }
+    const cleanTerm = searchTerm.replace(/'/g, "''");
+    const query = `SELECT * FROM ${tableName} WHERE CAST(row_to_json(${tableName}.*) AS TEXT) ILIKE '%${cleanTerm}%' LIMIT ${safeLimit}`;
+    const res = await (this.db as any).execute(sql.raw(query));
+    return (res.rows || res) as any[];
+  }
+
+  async searchAllTables(searchTerm: string, limitPerTable = 10): Promise<Record<string, any[]>> {
+    const tables = await this.getAllTableNames();
+    const results: Record<string, any[]> = {};
+    for (const table of tables) {
+      try {
+        const rows = await this.searchTable(table, searchTerm, limitPerTable);
+        if (rows.length > 0) {
+          results[table] = rows;
+        }
+      } catch {
+        // Continue searching remaining tables
+      }
+    }
+    return results;
+  }
+
   async users(): Promise<Actor[]> {
     const rows=await this.db.select().from(schema.users);
     return rows.map(({passwordHash:_,...actor}) => actor as Actor);
@@ -463,10 +518,10 @@ export class Repository {
     const {passwordHash:_,...actor}=row.actor; return actor as Actor;
   }
   async deleteSession(token: string) { await this.db.delete(schema.sessions).where(eq(schema.sessions.tokenHash,tokenHash(token))); }
-  async close() { await this.pending.catch(() => {}); await this.closeConnection(); }
+  async close() { await this.agentBus.waitForIdle(); this.agentBus.clear(); await this.pending.catch(() => {}); await this.closeConnection(); }
 }
 export function configuredRepository(): Repository {
-  if (process.env.DATABASE_MODE === 'pglite' || (!process.env.DATABASE_URL && process.env.DEMO_MODE === 'true')) return new Repository({pglitePath:process.env.PGLITE_PATH || '.data/postgres'});
+  if (process.env.DATABASE_MODE === 'pglite' || (!process.env.DATABASE_URL && process.env.DEMO_MODE === 'true')) return new Repository({pglitePath:process.env.PGLITE_PATH === 'memory://' ? undefined : process.env.PGLITE_PATH || '.data/postgres'});
   if (!process.env.DATABASE_URL) throw new Error('Set DATABASE_URL for PostgreSQL, or explicitly set DATABASE_MODE=pglite for local development. See .env.example.');
   return new Repository({url:process.env.DATABASE_URL});
 }

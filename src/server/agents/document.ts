@@ -38,6 +38,20 @@ export async function runDocumentReconcilerAgent(input: {
     ? input.state.shipments.find(s => s.id === shipmentIdClaim)
     : undefined;
 
+  // Search PGlite table directly if not in active state snapshot
+  if (!shipment && shipmentIdClaim) {
+    try {
+      const dbShipments = await input.repo.searchTable('shipments', shipmentIdClaim);
+      if (dbShipments.length > 0) {
+        const row = dbShipments[0];
+        const match = row?.data || row;
+        if (match?.id) shipment = match;
+      }
+    } catch {
+      // Graceful fallback
+    }
+  }
+
   if (!shipment && input.chunks.length > 0) {
     shipment = input.state.shipments.find(s =>
       input.chunks.some(c => c.content.includes(s.id))
